@@ -14,9 +14,9 @@
 #include "robot_typedef.h"
 
 #define CHASSIS_TYPE CHASSIS_OMNI_WHEEL         // 选择底盘类型
-#define GIMBAL_TYPE GIMBAL_NONE      // 选择云台类型
+#define GIMBAL_TYPE GIMBAL_YAW_PITCH_DIRECT         // 选择云台类型
 #define SHOOT_TYPE SHOOT_FRIC_TRIGGER            // 选择发射机构类型
-#define CONTROL_TYPE CHASSIS_ONLY          // 选择控制类型
+#define CONTROL_TYPE CHASSIS_AND_GIMBAL          // 选择控制类型
 #define MECHANICAL_ARM_TYPE MECHANICAL_ARM_NONE  //选择机械臂类型
 
 /*-------------------- Chassis --------------------*/
@@ -89,7 +89,7 @@
 
 /*-------------------- Gimbal --------------------*/
 //云台电流发送参数
-#define GIMBAL_CAN (2)
+#define GIMBAL_CAN (1)
 #define GIMBAL_STDID (0x1FF)
 
 //gimbal_init-------------------------------
@@ -103,16 +103,16 @@
 #define REMOTE_CONTROLLER_MIN_DEADLINE (-20.0f)
 //motor parameters ---------------------
 //电机id
-#define GIMBAL_DIRECT_YAW_ID ((uint8_t)1)
+#define GIMBAL_DIRECT_YAW_ID ((uint8_t)3)
 #define GIMBAL_DIRECT_PITCH_ID ((uint8_t)2)
 
 //电机can口
-#define GIMBAL_DIRECT_YAW_CAN ((uint8_t)2)
+#define GIMBAL_DIRECT_YAW_CAN ((uint8_t)1)
 #define GIMBAL_DIRECT_PITCH_CAN ((uint8_t)2)
 
 //电机种类
-#define GIMBAL_DIRECT_YAW_MOTOR_TYPE ((MotorType_e)DJI_M6020)
-#define GIMBAL_DIRECT_PITCH_MOTOR_TYPE ((MotorType_e)DJI_M6020)
+#define GIMBAL_DIRECT_YAW_MOTOR_TYPE ((MotorType_e)DM_4310)
+#define GIMBAL_DIRECT_PITCH_MOTOR_TYPE ((MotorType_e)DM_4310)
 
 //旋转方向
 #define GIMBAL_DIRECT_YAW_DIRECTION (1)
@@ -127,31 +127,33 @@
 #define GIMBAL_DIRECT_PITCH_MODE (0)
 
 //physical parameters ---------------------
-#define GIMBAL_UPPER_LIMIT_PITCH (0.3f)
-#define GIMBAL_LOWER_LIMIT_PITCH (-0.5f)
+#define GIMBAL_UPPER_LIMIT_PITCH (0.4f)
+#define GIMBAL_LOWER_LIMIT_PITCH (-0.2f)
 
 //电机角度中值设置
-#define GIMBAL_DIRECT_PITCH_MID (2.3731f)  //云台初始化正对齐的时候使用的pitch轴正中心量
-#define GIMBAL_DIRECT_YAW_MID  (-1.0410f)    //云台初始化正对齐的时候使用的yaw轴正中心量
+#define GIMBAL_DIRECT_PITCH_MID (0.2f)  //云台初始化正对齐的时候使用的pitch轴正中心量
+#define GIMBAL_DIRECT_YAW_MID  (0.215f)    //云台初始化正对齐的时候使用的yaw轴正中心量
 
 //PID parameters ---------------------
 //YAW ANGLE
-#define KP_GIMBAL_YAW_ANGLE (20.00f)
-#define KI_GIMBAL_YAW_ANGLE (0.003f)
-#define KD_GIMBAL_YAW_ANGLE (0.35f)
-#define MAX_IOUT_GIMBAL_YAW_ANGLE (0.05f)
-#define MAX_OUT_GIMBAL_YAW_ANGLE (13.0f)
+#define KP_GIMBAL_YAW_ANGLE      (12.0f)
+#define KI_GIMBAL_YAW_ANGLE      (0.0f)
+#define KD_GIMBAL_YAW_ANGLE      (0.0f)
+#define MAX_IOUT_GIMBAL_YAW_ANGLE (0.0f)
+#define MAX_OUT_GIMBAL_YAW_ANGLE (60.0f)
+#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (1.0f)
+#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)// 
 //VELOCITY:角速度
-#define KP_GIMBAL_YAW_VELOCITY (20000.0f)
-#define KI_GIMBAL_YAW_VELOCITY (1.0f)
-#define KD_GIMBAL_YAW_VELOCITY (0.0f)
+#define KP_GIMBAL_YAW_VELOCITY   (3000.0f)
+#define KI_GIMBAL_YAW_VELOCITY   (0.10f)
+#define KD_GIMBAL_YAW_VELOCITY   (40.0f)
 #define MAX_IOUT_GIMBAL_YAW_VELOCITY (7000.0f)
-#define MAX_OUT_GIMBAL_YAW_VELOCITY (30000.0f)
+#define MAX_OUT_GIMBAL_YAW_VELOCITY (3000.0f)
 
 //PITCH ANGLE
-#define KP_GIMBAL_PITCH_ANGLE (25.0f)  //4.5
+#define KP_GIMBAL_PITCH_ANGLE (12.0f)  //4.5
 #define KI_GIMBAL_PITCH_ANGLE (0.0f)
-#define KD_GIMBAL_PITCH_ANGLE (3.0f)  //3.0
+#define KD_GIMBAL_PITCH_ANGLE (2.0f)  //3.0
 #define MAX_IOUT_GIMBAL_PITCH_ANGLE (1.0f)
 #define MAX_OUT_GIMBAL_PITCH_ANGLE (15.0f)
 //VELOCITY:角速度
@@ -244,3 +246,5 @@
 #define SHOOT_HEAT_REMAIN_VALUE     70
 
 #endif /* INCLUDED_ROBOT_PARAM_H */
+
+
