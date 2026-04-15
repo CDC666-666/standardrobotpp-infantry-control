@@ -178,21 +178,21 @@
 
 //电机ID
 #define TRIGGER_MOTOR_ID 8
-#define FRIC_MOTOR_R_ID 6
-#define FRIC_MOTOR_L_ID 5
+#define FRIC_MOTOR_R_ID 1
+#define FRIC_MOTOR_L_ID 2
 
 //电机can口
 #define TRIGGER_MOTOR_CAN 1
-#define FRIC_MOTOR_R_CAN 1
-#define FRIC_MOTOR_L_CAN 1
+#define FRIC_MOTOR_R_CAN 2
+#define FRIC_MOTOR_L_CAN 2
 
 //电机std_id
-#define STD_ID 0x1FF
+#define STD_ID 0x200
 //单环拨弹速度
-#define TRIGGER_SPEED               (700.0f)
+#define TRIGGER_SPEED               (500.0f)
 //摩擦轮速度
-#define FRIC_R_SPEED                  (686.0f) 
-#define FRIC_L_SPEED                  (-686.0f) 
+#define FRIC_R_SPEED                  (-686.0f)
+#define FRIC_L_SPEED                  (686.0f)
 #define FRIC_SPEED_LIMIT            (550.0f) 
 
 /*ECD parameters------------*/
@@ -221,7 +221,7 @@
 
 //拨弹轮电机PID速度环
 #define TRIGGER_SPEED_PID_KP (280.0f)
-#define TRIGGER_SPEED_PID_KI (0.3f)
+#define TRIGGER_SPEED_PID_KI (0.0f)
 #define TRIGGER_SPEED_PID_KD (0.5f)
 
 #define TRIGGER_SPEED_PID_MAX_OUT (10000.0f)
@@ -229,7 +229,7 @@
 
 //拨弹轮电机PID角度环
 #define TRIGGER_ANGEL_PID_KP (300.0f)
-#define TRIGGER_ANGEL_PID_KI (0.5f)
+#define TRIGGER_ANGEL_PID_KI (0.0f)
 #define TRIGGER_ANGEL_PID_KD (0.05f)
 
 #define TRIGGER_ANGEL_PID_MAX_OUT (800.0f)
@@ -237,7 +237,7 @@
 
 //摩擦轮电机PID
 #define FRIC_SPEED_PID_KP (651.0f)
-#define FIRC_SPEED_PID_KI (0.08f)
+#define FIRC_SPEED_PID_KI (0.00f)
 #define FRIC_SPEED_PID_KD (4.3f)
 
 #define FRIC_PID_MAX_OUT (16000.0f)

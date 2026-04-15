@@ -93,78 +93,89 @@ void ShootSetMode(void)
    {
         SHOOT.state = FRIC_NOT_READY;
         SHOOT.mode = LOAD_STOP;
+        SHOOT.fric_flag = 0;
+        SHOOT.move_flag = 0;
+        SHOOT.shoot_flag = 0;
+        SHOOT.mr_time = 0;
    } 
 
-   else if (switch_is_mid(SHOOT.rc->rc.s[SHOOT_MODE_CHANNEL]))
+   else if (switch_is_mid(SHOOT.rc->rc.s[0]))
    {
-        if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_Q)//Q启动摩擦轮
-        {
-          SHOOT.fric_flag = 1;
-        }
-        else if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_E)//E关闭摩擦轮
-        {
-          SHOOT.fric_flag = 0;
-        }
+        // if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_Q)//Q启动摩擦轮
+        // {
+        //   SHOOT.fric_flag = 1;
+        // }
+        // else if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_E)//E关闭摩擦轮
+        // {
+        //   SHOOT.fric_flag = 0;
+        // }
         
-        if (SHOOT.fric_flag)
-        {
-            SHOOT.state = FRIC_READY;
-        }
-        else
-        {
-            SHOOT.state = FRIC_NOT_READY;
-        }
+        // if (SHOOT.fric_flag)
+        // {
+        //     SHOOT.state = FRIC_READY;
+        // }
+        // else
+        // {
+        //     SHOOT.state = FRIC_NOT_READY;
+        // }
 
         //  拨弹盘控制
-        if (SHOOT.rc->mouse.press_l && !SHOOT.shoot_flag)
-        {
-          SHOOT.mode = LAOD_BULLET;
-        }
-        else if (SHOOT.rc->mouse.press_r)
-        {
-            if (GetScCmdFire())
-            {
-                SHOOT.mode = LOAD_BURSTFIRE;
-            }
-            else
-            {
-                SHOOT.mode = LOAD_STOP;
-            }
-        }
-        else
-        {
-          SHOOT.mode = LOAD_STOP;
-        }
+        // if (SHOOT.rc->mouse.press_l && !SHOOT.shoot_flag)
+        // {
+        //   SHOOT.mode = LAOD_BULLET;
+        // }
+        // else if (SHOOT.rc->mouse.press_r)
+        // {
+        //     if (GetScCmdFire())
+        //     {
+        //         SHOOT.mode = LOAD_BURSTFIRE;
+        //     }
+        //     else
+        //     {
+        //         SHOOT.mode = LOAD_STOP;
+        //     }
+        // }
+        // else
+        // {
+        //   SHOOT.mode = LOAD_STOP;
+        // }
         
-        SHOOT.shoot_flag = SHOOT.rc->mouse.press_l;
+        // SHOOT.shoot_flag = SHOOT.rc->mouse.press_l;
 
-        if (SHOOT.move_flag)
-        {
-            SHOOT.mode = LAOD_BULLET;
-        }
+        // if (SHOOT.move_flag)
+        // {
+        //     SHOOT.mode = LAOD_BULLET;
+        // }
         
-        if (SHOOT.rc->mouse.press_l)
-        {
-            if (SHOOT.mr_time < 180)
-            {
-                SHOOT.mr_time++;
-            }
-            else
-            {
-                SHOOT.mode = LOAD_BURSTFIRE;
-                SHOOT.move_flag = 0;
-            }
-        }
-        else
-        {
-            SHOOT.mr_time = 0;
-        }
+        // if (SHOOT.rc->mouse.press_l)
+        // {
+        //     if (SHOOT.mr_time < 180)
+        //     {
+        //         SHOOT.mr_time++;
+        //     }
+        //     else
+        //     {
+        //         SHOOT.mode = LOAD_BURSTFIRE;
+        //         SHOOT.move_flag = 0;
+        //     }
+        // }
+        // else
+        // {
+        //     SHOOT.mr_time = 0;
+        // }
+
+        SHOOT.fric_flag = 1;
+        SHOOT.state = FRIC_READY;
+        SHOOT.mode = LOAD_STOP;
+        SHOOT.block_time = 0;
+        SHOOT.reverse_time = 0;
     } 
-    else if (switch_is_down(SHOOT.rc->rc.s[SHOOT_MODE_CHANNEL]))
+    else if (switch_is_down(SHOOT.rc->rc.s[0]))
     {
       //清弹
         SHOOT.state = FRIC_READY;
         SHOOT.mode = LOAD_BURSTFIRE;
+        SHOOT.fric_flag = 1;
 
       //上位机测试
         // SHOOT.state = FRIC_READY;
@@ -180,43 +191,48 @@ void ShootSetMode(void)
     }
 
     //过热保护
-    if (fabs(SHOOT.last_fric_vel) < FRIC_SPEED_LIMIT)
-    {
-        SHOOT.mode = LOAD_STOP;
-        fric_ui = 0;
-    }
-    else
-    {
-        fric_ui = 1;
-    }
+    // if (fabs(SHOOT.last_fric_vel) < FRIC_SPEED_LIMIT)
+    // {
+    //     SHOOT.mode = LOAD_STOP;
+    //     fric_ui = 0;
+    // }
+    // else
+    // {
+    //     fric_ui = 1;
+    // }
     
     //热量限制
-    if (TRIGGER_MOTOR_TYPE == DJI_M2006)
-    {
-        get_shoot_heat0_limit_and_heat0(&SHOOT.heat_limit, &SHOOT.heat);
-    }
-    else if (TRIGGER_MOTOR_TYPE == DM_4310)
-    {
-        get_shoot_heat42_limit_and_heat42(&SHOOT.heat_limit, &SHOOT.heat);
-    }
+    // if (TRIGGER_MOTOR_TYPE == DJI_M2006)
+    // {
+    //     get_shoot_heat0_limit_and_heat0(&SHOOT.heat_limit, &SHOOT.heat);
+    // }
+    // else if (TRIGGER_MOTOR_TYPE == DM_4310)
+    // {
+    //     get_shoot_heat42_limit_and_heat42(&SHOOT.heat_limit, &SHOOT.heat);
+    // }
 
-    if ((SHOOT.heat + SHOOT_HEAT_REMAIN_VALUE) > SHOOT.heat_limit)
-    {
-        SHOOT.mode = LOAD_STOP;
-    }
+    // if ((SHOOT.heat + SHOOT_HEAT_REMAIN_VALUE) > SHOOT.heat_limit)
+    // {
+    //     SHOOT.mode = LOAD_STOP;
+    // }
 
     //安全档
-    if ((switch_is_down(SHOOT.rc->rc.s[0])))
+     if ((switch_is_up(SHOOT.rc->rc.s[1])))
     {
         SHOOT.mode = LOAD_STOP;
         SHOOT.state = FRIC_NOT_READY;
+        SHOOT.block_time = 0;
+        SHOOT.reverse_time = 0;
     }
+    // keep down-switch burst fire enabled
     
     //遥控器离线保护
     if ( toe_is_error(DBUS_TOE) )
     {        
         SHOOT.state = FRIC_NOT_READY;
         SHOOT.mode = LOAD_STOP;
+        SHOOT.block_time = 0;
+        SHOOT.reverse_time = 0;
     }
 
     //防堵转
@@ -333,16 +349,17 @@ void ShootObserver(void)
   //}
 
   
-    else if (TRIGGER_MOTOR_TYPE == DM_4310)
-    {
-        SHOOT.FDB.trigger_angel_fdb = theta_format(SHOOT.trigger_motor.fdb.pos);
-    }
+    // else if (TRIGGER_MOTOR_TYPE == DM_4310)
+    // {
+    //     SHOOT.FDB.trigger_angel_fdb = theta_format(SHOOT.trigger_motor.fdb.pos);
+    // }
   
     //记录上一个拨弹盘vel,用于堵转模式判断
     SHOOT.last_trigger_vel = SHOOT.trigger_motor.fdb.vel;
 
     //记录上一个摩擦轮vel,用于过热保护
     SHOOT.last_fric_vel = SHOOT.fric_motor[0].fdb.vel;
+    
 }
 
 /*-------------------- Reference --------------------*/
@@ -461,33 +478,33 @@ void ShootConsole(void)
         SHOOT.trigger_motor.set.curr = PID_calc(&SHOOT.trigger_speed_pid, SHOOT.FDB.trigger_speed_fdb, SHOOT.REF.trigger_speed_ref);
     }
   }
-  else if (TRIGGER_MOTOR_TYPE == DM_4310)
-  {
-    if (SHOOT.mode == LOAD_STOP)
-    {
-        SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
-    }
-    else if (SHOOT.mode == LOAD_BURSTFIRE)
-    {
-        SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
-    }
-    else if (SHOOT.mode == LAOD_BULLET)
-    {
-        delta = theta_format(SHOOT.REF.trigger_angel_ref - SHOOT.FDB.trigger_angel_fdb);
-        SHOOT.trigger_motor.set.vel = PID_calc(&SHOOT.trigger_angel_pid,0,delta);
-    }
-    else if (SHOOT.mode == LOAD_BLOCK) 
-    {
-        SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
-    }
-  }
+  // else if (TRIGGER_MOTOR_TYPE == DM_4310)
+  // {
+  //   if (SHOOT.mode == LOAD_STOP)
+  //   {
+  //       SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
+  //   }
+  //   else if (SHOOT.mode == LOAD_BURSTFIRE)
+  //   {
+  //       SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
+  //   }
+  //   else if (SHOOT.mode == LAOD_BULLET)
+  //   {
+  //       delta = theta_format(SHOOT.REF.trigger_angel_ref - SHOOT.FDB.trigger_angel_fdb);
+  //       SHOOT.trigger_motor.set.vel = PID_calc(&SHOOT.trigger_angel_pid,0,delta);
+  //   }
+  //   else if (SHOOT.mode == LOAD_BLOCK) 
+  //   {
+  //       SHOOT.trigger_motor.set.vel = SHOOT.REF.trigger_speed_ref;
+  //   }
+  // }
   
 }
 
 /*-------------------- Cmd --------------------*/
 
 /**
- * @brief          发送控制量
+ * @brief          鍙戦€佹帶鍒堕噺
  * @param[in]      none
  * @retval         none
  */
@@ -495,18 +512,20 @@ void ShootSendCmd(void)
 {
   if (TRIGGER_MOTOR_TYPE == DJI_M2006)
   {
-    CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID , SHOOT.fric_motor[1].set.curr,SHOOT.fric_motor[0].set.curr,0, SHOOT.trigger_motor.set.curr);
+
+    CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID , SHOOT.fric_motor[0].set.curr,SHOOT.fric_motor[1].set.curr,0, 0);
+    CanCmdDjiMotor(TRIGGER_MOTOR_CAN, 0x1FF , 0, 0, 0, SHOOT.trigger_motor.set.curr);
   }
-  else if (TRIGGER_MOTOR_TYPE == DM_4310)
-  {
-    if (SHOOT.trigger_motor.fdb.state == DM_STATE_DISABLE) 
-    {
-      DmEnable(&SHOOT.trigger_motor);
-    }
-    DmMitCtrlVelocity(&SHOOT.trigger_motor, TRIGGER_SPEED_MIT_KD);
+  // else if (TRIGGER_MOTOR_TYPE == DM_4310)
+  // {
+  //   if (SHOOT.trigger_motor.fdb.state == DM_STATE_DISABLE) 
+  //   {
+  //     DmEnable(&SHOOT.trigger_motor);
+  //   }
+  //   DmMitCtrlVelocity(&SHOOT.trigger_motor, TRIGGER_SPEED_MIT_KD);
   
-    CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID ,0 ,SHOOT.fric_motor[1].set.curr,SHOOT.fric_motor[0].set.curr, 0);
-  }
+  //   CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID ,0 ,SHOOT.fric_motor[1].set.curr,SHOOT.fric_motor[0].set.curr, 0);
+  // }
 }
 
 #endif  // SHOOT_TYPE == SHOOT_FRIC
