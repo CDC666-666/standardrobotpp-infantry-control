@@ -38,8 +38,8 @@
 typedef enum {
     CHASSIS_LOCK,      //底盘锁定，所有轮子速度设定为0
     CHASSIS_SINGLE,    //只有底盘的模式
-    CHASSIS_FOLLOW,    //云台跟随模式
-    CHASSIS_SPIN,
+    CHASSIS_FOLLOW,    //云台跟随模式  
+    CHASSIS_SPIN,    //底盘旋转模式
 } ChassisMode_e;
 
 /**
@@ -82,7 +82,15 @@ typedef struct
     fp32 feedback[4];
     fp32 set[4];
 
-    fp32 yaw_delta;
+    fp32 yaw_delta;//云台相对底盘的偏航差
+    ChassisMode_e spin_mode_last;
+    fp32 wz_set_smoothed;
+    fp32 spin_acceleration_limit;
+    
+    fp32 sin_yaw;
+    fp32 cos_yaw;
+    fp32 spin_target_wz;
+    fp32 wz_error;
 
     uint16_t x_time;
     uint16_t y_time;
@@ -93,8 +101,11 @@ typedef struct
     uint32_t f_flag;
 } Chassis_s;
 
+extern Chassis_s chassis;
 
 extern void ChassisInit(void);
+
+extern void ChassisHandleException(void);
 
 extern void ChassisSetMode(void);
 
@@ -107,4 +118,5 @@ extern void ChassisConsole(void);
 extern void ChassisSendCmd(void);
 
 #endif 
-#endif 
+#endif
+

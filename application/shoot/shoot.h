@@ -31,7 +31,7 @@
 #define SHOOT_CONTROL_TIME 1      // 任务控制间隔 1ms
 
 // 遥控器相关宏定义
-#define SHOOT_MODE_CHANNEL 1  // 射击发射开关通道数据
+#define SHOOT_MODE_CHANNEL 0  // 射击发射开关通道数据
 
 // clang-format off
 typedef struct

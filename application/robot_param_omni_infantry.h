@@ -14,9 +14,9 @@
 #include "robot_typedef.h"
 
 #define CHASSIS_TYPE CHASSIS_OMNI_WHEEL         // 选择底盘类型
-#define GIMBAL_TYPE GIMBAL_NONE      // 选择云台类型
+#define GIMBAL_TYPE GIMBAL_YAW_PITCH_DIRECT         // 选择云台类型
 #define SHOOT_TYPE SHOOT_FRIC_TRIGGER            // 选择发射机构类型
-#define CONTROL_TYPE CHASSIS_ONLY          // 选择控制类型
+#define CONTROL_TYPE CHASSIS_AND_GIMBAL          // 选择控制类型
 #define MECHANICAL_ARM_TYPE MECHANICAL_ARM_NONE  //选择机械臂类型
 
 /*-------------------- Chassis --------------------*/
@@ -67,18 +67,18 @@
 
 //PID parameters ---------------------
 //驱动轮速度环PID参数
-#define KP_OMNI_VEL (235.0f)
-#define KI_OMNI_VEL (0.01f)
+#define KP_OMNI_VEL (170.0f)
+#define KI_OMNI_VEL (0.00f)
 #define KD_OMNI_VEL (0.1f)
 #define MAX_IOUT_OMNI_VEL (1000.0f)
 #define MAX_OUT_OMNI_VEL (16000.0f)
 
 //云台跟随角度环PID参数
-#define KP_CHASSIS_FOLLOW_GIMBAL (9.0f)
-#define KI_CHASSIS_FOLLOW_GIMBAL (0.0f)
-#define KD_CHASSIS_FOLLOW_GIMBAL (0.3f)
-#define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f)
-#define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (9.0f)
+#define KP_CHASSIS_FOLLOW_GIMBAL (3.0f)      
+#define KI_CHASSIS_FOLLOW_GIMBAL (0.0f)     
+#define KD_CHASSIS_FOLLOW_GIMBAL (0.45f)      
+#define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f) 
+#define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (15.0f) 
 
 //RC parametes ---------------------
 //遥控器相关参数
@@ -89,7 +89,7 @@
 
 /*-------------------- Gimbal --------------------*/
 //云台电流发送参数
-#define GIMBAL_CAN (2)
+#define GIMBAL_CAN (1)
 #define GIMBAL_STDID (0x1FF)
 
 //gimbal_init-------------------------------
@@ -103,16 +103,16 @@
 #define REMOTE_CONTROLLER_MIN_DEADLINE (-20.0f)
 //motor parameters ---------------------
 //电机id
-#define GIMBAL_DIRECT_YAW_ID ((uint8_t)1)
+#define GIMBAL_DIRECT_YAW_ID ((uint8_t)3)
 #define GIMBAL_DIRECT_PITCH_ID ((uint8_t)2)
 
 //电机can口
-#define GIMBAL_DIRECT_YAW_CAN ((uint8_t)2)
+#define GIMBAL_DIRECT_YAW_CAN ((uint8_t)1)
 #define GIMBAL_DIRECT_PITCH_CAN ((uint8_t)2)
 
 //电机种类
-#define GIMBAL_DIRECT_YAW_MOTOR_TYPE ((MotorType_e)DJI_M6020)
-#define GIMBAL_DIRECT_PITCH_MOTOR_TYPE ((MotorType_e)DJI_M6020)
+#define GIMBAL_DIRECT_YAW_MOTOR_TYPE ((MotorType_e)DM_4310)
+#define GIMBAL_DIRECT_PITCH_MOTOR_TYPE ((MotorType_e)DM_4310)
 
 //旋转方向
 #define GIMBAL_DIRECT_YAW_DIRECTION (1)
@@ -127,31 +127,33 @@
 #define GIMBAL_DIRECT_PITCH_MODE (0)
 
 //physical parameters ---------------------
-#define GIMBAL_UPPER_LIMIT_PITCH (0.3f)
-#define GIMBAL_LOWER_LIMIT_PITCH (-0.5f)
+#define GIMBAL_UPPER_LIMIT_PITCH (0.4f)
+#define GIMBAL_LOWER_LIMIT_PITCH (-0.2f)
 
 //电机角度中值设置
-#define GIMBAL_DIRECT_PITCH_MID (2.3731f)  //云台初始化正对齐的时候使用的pitch轴正中心量
-#define GIMBAL_DIRECT_YAW_MID  (-1.0410f)    //云台初始化正对齐的时候使用的yaw轴正中心量
+#define GIMBAL_DIRECT_PITCH_MID (0.2f)  //云台初始化正对齐的时候使用的pitch轴正中心量
+#define GIMBAL_DIRECT_YAW_MID  (0.215f)    //云台初始化正对齐的时候使用的yaw轴正中心量
 
 //PID parameters ---------------------
 //YAW ANGLE
-#define KP_GIMBAL_YAW_ANGLE (20.00f)
-#define KI_GIMBAL_YAW_ANGLE (0.003f)
-#define KD_GIMBAL_YAW_ANGLE (0.35f)
-#define MAX_IOUT_GIMBAL_YAW_ANGLE (0.05f)
-#define MAX_OUT_GIMBAL_YAW_ANGLE (13.0f)
+#define KP_GIMBAL_YAW_ANGLE      (12.0f)
+#define KI_GIMBAL_YAW_ANGLE      (0.0f)
+#define KD_GIMBAL_YAW_ANGLE      (0.0f)
+#define MAX_IOUT_GIMBAL_YAW_ANGLE (0.0f)
+#define MAX_OUT_GIMBAL_YAW_ANGLE (60.0f)
+#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (1.0f)
+#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)// 
 //VELOCITY:角速度
-#define KP_GIMBAL_YAW_VELOCITY (20000.0f)
-#define KI_GIMBAL_YAW_VELOCITY (1.0f)
-#define KD_GIMBAL_YAW_VELOCITY (0.0f)
+#define KP_GIMBAL_YAW_VELOCITY   (3000.0f)
+#define KI_GIMBAL_YAW_VELOCITY   (0.10f)
+#define KD_GIMBAL_YAW_VELOCITY   (40.0f)
 #define MAX_IOUT_GIMBAL_YAW_VELOCITY (7000.0f)
-#define MAX_OUT_GIMBAL_YAW_VELOCITY (30000.0f)
+#define MAX_OUT_GIMBAL_YAW_VELOCITY (3000.0f)
 
 //PITCH ANGLE
-#define KP_GIMBAL_PITCH_ANGLE (25.0f)  //4.5
+#define KP_GIMBAL_PITCH_ANGLE (12.0f)  //4.5
 #define KI_GIMBAL_PITCH_ANGLE (0.0f)
-#define KD_GIMBAL_PITCH_ANGLE (3.0f)  //3.0
+#define KD_GIMBAL_PITCH_ANGLE (2.0f)  //3.0
 #define MAX_IOUT_GIMBAL_PITCH_ANGLE (1.0f)
 #define MAX_OUT_GIMBAL_PITCH_ANGLE (15.0f)
 //VELOCITY:角速度
@@ -176,21 +178,21 @@
 
 //电机ID
 #define TRIGGER_MOTOR_ID 8
-#define FRIC_MOTOR_R_ID 6
-#define FRIC_MOTOR_L_ID 5
+#define FRIC_MOTOR_R_ID 1
+#define FRIC_MOTOR_L_ID 2
 
 //电机can口
 #define TRIGGER_MOTOR_CAN 1
-#define FRIC_MOTOR_R_CAN 1
-#define FRIC_MOTOR_L_CAN 1
+#define FRIC_MOTOR_R_CAN 2
+#define FRIC_MOTOR_L_CAN 2
 
 //电机std_id
-#define STD_ID 0x1FF
+#define STD_ID 0x200
 //单环拨弹速度
-#define TRIGGER_SPEED               (700.0f)
+#define TRIGGER_SPEED               (500.0f)
 //摩擦轮速度
-#define FRIC_R_SPEED                  (686.0f) 
-#define FRIC_L_SPEED                  (-686.0f) 
+#define FRIC_R_SPEED                  (-686.0f)
+#define FRIC_L_SPEED                  (686.0f)
 #define FRIC_SPEED_LIMIT            (550.0f) 
 
 /*ECD parameters------------*/
@@ -219,7 +221,7 @@
 
 //拨弹轮电机PID速度环
 #define TRIGGER_SPEED_PID_KP (280.0f)
-#define TRIGGER_SPEED_PID_KI (0.3f)
+#define TRIGGER_SPEED_PID_KI (0.0f)
 #define TRIGGER_SPEED_PID_KD (0.5f)
 
 #define TRIGGER_SPEED_PID_MAX_OUT (10000.0f)
@@ -227,7 +229,7 @@
 
 //拨弹轮电机PID角度环
 #define TRIGGER_ANGEL_PID_KP (300.0f)
-#define TRIGGER_ANGEL_PID_KI (0.5f)
+#define TRIGGER_ANGEL_PID_KI (0.0f)
 #define TRIGGER_ANGEL_PID_KD (0.05f)
 
 #define TRIGGER_ANGEL_PID_MAX_OUT (800.0f)
@@ -235,7 +237,7 @@
 
 //摩擦轮电机PID
 #define FRIC_SPEED_PID_KP (651.0f)
-#define FIRC_SPEED_PID_KI (0.08f)
+#define FIRC_SPEED_PID_KI (0.00f)
 #define FRIC_SPEED_PID_KD (4.3f)
 
 #define FRIC_PID_MAX_OUT (16000.0f)
@@ -244,3 +246,5 @@
 #define SHOOT_HEAT_REMAIN_VALUE     70
 
 #endif /* INCLUDED_ROBOT_PARAM_H */
+
+

@@ -37,7 +37,7 @@ uint32_t music_high_water;
 // 启用遥控器离线报警
 #define ENABLE_ALARM_RC_OFFLINE false
 // 启用电机离线报警
-#define ENABLE_ALARM_MOTOR_OFFLINE true
+#define ENABLE_ALARM_MOTOR_OFFLINE false
 // 启用裁判系统离线检测
 #define ENABLE_CHECK_REFEREE_OFFLINE true
 
@@ -166,16 +166,16 @@ static void MusicInit(void)
     music_step = STEP_INIT;
 
     // clang-format off
-    MUSICS[start]             = MusicStartInit();
-    MUSICS[motor_offline]     = MusicMotorOfflineInit();
-    MUSICS[rc_offline]        = MusicRcOfflineInit();
+    //MUSICS[start]             = MusicStartInit();
+    //MUSICS[motor_offline]     = MusicMotorOfflineInit();
+    //MUSICS[rc_offline]        = MusicRcOfflineInit();
     // MUSICS[you]               = MusicYouInit();
     // MUSICS[unity]             = MusicUnityInit();
     // MUSICS[canon]             = MusicCanonInit();
     // MUSICS[castle_in_the_sky] = MusicCastleInTheSkyInit();
     // MUSICS[see_you_again]     = MusicSeeYouAgainInit();
-    MUSICS[hao_yun_lai]       = MusicHaoYunLaiInit();
-    MUSICS[gong_xi_fa_cai]    = MusicGongXiFaCaiInit();
+    //MUSICS[hao_yun_lai]       = MusicHaoYunLaiInit();
+    //MUSICS[gong_xi_fa_cai]    = MusicGongXiFaCaiInit();
     // MUSICS[deja_vu]           = MusicDejaVuInit();
     // clang-format on
 }

@@ -3623,7 +3623,7 @@ static void prvCheckTasksWaitingTermination( void )
 	{
 	uint32_t ulCount = 0U;
 
-		while( *pucStackByte == ( uint8_t ) tskSTACK_FILL_BYTE )
+ 		while( *pucStackByte == ( uint8_t ) tskSTACK_FILL_BYTE )
 		{
 			pucStackByte -= portSTACK_GROWTH;
 			ulCount++;

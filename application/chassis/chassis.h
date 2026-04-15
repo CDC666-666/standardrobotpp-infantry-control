@@ -58,10 +58,7 @@ inline float ChassisGetSpeedVx(void);
  */
 inline float ChassisGetSpeedVy(void);
 
-/**
- * @brief 获取底盘坐标系下的速度wz (rad/s)
- */
-inline float ChassisGetSpeedWz(void);
+
 
 #endif  // CHASSIS_TYPE
 #endif  // CHASSIS_H

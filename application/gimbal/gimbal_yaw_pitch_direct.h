@@ -30,6 +30,7 @@
 #include "struct_typedef.h"
 #include  "user_lib.h"
 #include "CAN_cmd_dji.h"
+#include "CAN_cmd_damiao.h"
 #include "detect_task.h"
 #include "usb_debug.h"
 #include "cmsis_os.h"
