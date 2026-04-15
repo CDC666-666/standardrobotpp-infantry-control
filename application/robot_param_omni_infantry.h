@@ -67,18 +67,18 @@
 
 //PID parameters ---------------------
 //驱动轮速度环PID参数
-#define KP_OMNI_VEL (235.0f)
-#define KI_OMNI_VEL (0.01f)
+#define KP_OMNI_VEL (170.0f)
+#define KI_OMNI_VEL (0.00f)
 #define KD_OMNI_VEL (0.1f)
 #define MAX_IOUT_OMNI_VEL (1000.0f)
 #define MAX_OUT_OMNI_VEL (16000.0f)
 
 //云台跟随角度环PID参数
-#define KP_CHASSIS_FOLLOW_GIMBAL (9.0f)
-#define KI_CHASSIS_FOLLOW_GIMBAL (0.0f)
-#define KD_CHASSIS_FOLLOW_GIMBAL (0.3f)
-#define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f)
-#define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (9.0f)
+#define KP_CHASSIS_FOLLOW_GIMBAL (3.0f)      
+#define KI_CHASSIS_FOLLOW_GIMBAL (0.0f)     
+#define KD_CHASSIS_FOLLOW_GIMBAL (0.45f)      
+#define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f) 
+#define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (15.0f) 
 
 //RC parametes ---------------------
 //遥控器相关参数
