@@ -84,7 +84,7 @@
 //遥控器相关参数
 #define CHASSIS_RC_DEADLINE (5.0f)      // 摇杆死区
 #define CHASSIS_RC_MAX_RANGE (660.0f)   //遥控器最大量程
-#define CHASSIS_RC_MAX_SPEED (1.5f)     //最大速度(m/s)
+#define CHASSIS_RC_MAX_SPEED (4.0f)     //最大速度(m/s)
 #define CHASSIS_RC_MAX_VELOCITY (2.0f)  //最大角速度(rad/s) 仅用于无云台模式
 
 /*-------------------- Gimbal --------------------*/
@@ -177,7 +177,7 @@
 #define FRIC_MOTOR_TYPE ((MotorType_e)DJI_M3508)
 
 //电机ID
-#define TRIGGER_MOTOR_ID 8
+#define TRIGGER_MOTOR_ID 6
 #define FRIC_MOTOR_R_ID 1
 #define FRIC_MOTOR_L_ID 2
 
@@ -189,7 +189,7 @@
 //电机std_id
 #define STD_ID 0x200
 //单环拨弹速度
-#define TRIGGER_SPEED               (500.0f)
+#define TRIGGER_SPEED               (575.0f)
 //摩擦轮速度
 #define FRIC_R_SPEED                  (-686.0f)
 #define FRIC_L_SPEED                  (686.0f)
@@ -211,7 +211,7 @@
 #define BLOCK_TRIGGER_SPEED         5.0f
 #define BLOCK_TIME                  1000
 #define REVERSE_TIME                1250
-#define REVERSE_SPEED               (-20.0f) 
+#define REVERSE_SPEED               (-40.0f) 
 
 /*MIT parameters ---------------------*/
 
@@ -220,15 +220,15 @@
 /*PID parameters ---------------------*/
 
 //拨弹轮电机PID速度环
-#define TRIGGER_SPEED_PID_KP (280.0f)
+#define TRIGGER_SPEED_PID_KP (250.0f)
 #define TRIGGER_SPEED_PID_KI (0.0f)
-#define TRIGGER_SPEED_PID_KD (0.5f)
+#define TRIGGER_SPEED_PID_KD (1.2f)
 
 #define TRIGGER_SPEED_PID_MAX_OUT (10000.0f)
-#define TRIGGER_SPEED_PID_MAX_IOUT (1000.0f)
+#define TRIGGER_SPEED_PID_MAX_IOUT (600.0f)
 
 //拨弹轮电机PID角度环
-#define TRIGGER_ANGEL_PID_KP (300.0f)
+#define TRIGGER_ANGEL_PID_KP (340.0f)
 #define TRIGGER_ANGEL_PID_KI (0.0f)
 #define TRIGGER_ANGEL_PID_KD (0.05f)
 

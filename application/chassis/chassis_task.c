@@ -23,6 +23,7 @@
 #include "chassis_balance.h"
 #include "chassis_mecanum.h"
 #include "chassis_omni.h"
+#include "chassis_power_control.h"
 #include "chassis_steering.h"
 #include "cmsis_os.h"
 #include "usb_debug.h"
@@ -72,6 +73,8 @@ void chassis_task(void const * pvParameters)
         ChassisReference();
         // 计算控制量
         ChassisConsole();
+        //功率控制
+        chassis_power_control();
         // 发送控制量
         ChassisSendCmd();
         // 系统延时
@@ -96,7 +99,7 @@ __weak void ChassisInit(void)
     */
 }
 __weak void ChassisHandleException(void)
-{
+{	
     /* 
      NOTE : 在其他文件中定义具体内容
     */

@@ -32,7 +32,9 @@
 #include "usb_debug.h"
 #include "chassis_power_control.h"
 #include "referee.h"
-#include "IMU.h"
+#include "IMU.h"  // 添加IMU头文件，用于获取稳定的陀螺仪数据
+#include "CAN_cmd_SupCap.h"  // 添加超级电容控制头文件，解决CanCmdSupCap函数声明问题
+#include "SupCap.h"//超级电容
 
 Chassis_s chassis;
 PID_t chassis_pid;
@@ -51,14 +53,14 @@ inline int GetChassisSpinState(void)
  */
 void ChassisInit(void)
 {
-    //step1 获取所有所需变量指针
+    //step1 获取遥控器指针
     chassis.rc = get_remote_control_point();
 
     //step2 PID数据清零，设置PID参数
     const static fp32 wheel_vel[3]={KP_OMNI_VEL,KI_OMNI_VEL,KD_OMNI_VEL};
     for (int i=0;i<4;++i)
     {
-        PID_init(&chassis_pid.wheel_velocity[i],PID_POSITION,wheel_vel,MAX_OUT_OMNI_VEL,MAX_IOUT_OMNI_VEL);
+        PID_init(&chassis.wheel_velocity[i],PID_POSITION,wheel_vel,MAX_OUT_OMNI_VEL,MAX_IOUT_OMNI_VEL);
     }
     
     const static fp32 gimbal_follow[3]={KP_CHASSIS_FOLLOW_GIMBAL,KI_CHASSIS_FOLLOW_GIMBAL,KD_CHASSIS_FOLLOW_GIMBAL};
@@ -68,6 +70,18 @@ void ChassisInit(void)
     MotorInit(&chassis.wheel[1], WHEEL_2_ID, WHEEL_2_CAN, WHEEL_2_MOTOR_TYPE, WHEEL_2_DIRECTION, WHEEL_2_RATIO, WHEEL_2_MODE);
     MotorInit(&chassis.wheel[2], WHEEL_3_ID, WHEEL_3_CAN, WHEEL_3_MOTOR_TYPE, WHEEL_3_DIRECTION, WHEEL_3_RATIO, WHEEL_3_MODE);
     MotorInit(&chassis.wheel[3], WHEEL_4_ID, WHEEL_4_CAN, WHEEL_4_MOTOR_TYPE, WHEEL_4_DIRECTION, WHEEL_4_RATIO, WHEEL_4_MODE);
+
+    /*-------------------- 初始化超级电容 --------------------*/
+    SupCapInit(&chassis.super_cap, 1);  // 初始化超级电容，使用CAN1
+
+    /*-------------------- 初始化功率控制 --------------------*/
+    chassis_power_control_init(&chassis);  // 初始化功率控制系统
+
+    // 发送初始化超级电容控制命令
+    // 初始化时从裁判系统获取缓冲能量数据
+    fp32 init_power, init_buffer;
+    get_chassis_power_and_buffer(&init_power, &init_buffer);
+    CanCmdSupCap(1, (uint16_t)init_buffer, 50, 1);  // 使用裁判系统的实际缓冲能量
 
     //step4 初始模式设置
     chassis.mode = CHASSIS_LOCK;
@@ -118,6 +132,9 @@ void ChassisObserver(void)
         chassis.feedback[i] = chassis.wheel[i].fdb.vel;
     }
 
+    
+    // 更新超级电容反馈数据
+    GetSupCapMeasure(&chassis.super_cap);
     // 使用云台相对底盘的偏航差，供跟随和小陀螺模式使用。
     chassis.yaw_delta = CmdGimbalJointState(AX_YAW);
 }
@@ -240,7 +257,7 @@ void ChassisConsole(void)
 
     for (int i = 0; i < 4; ++i)
     {
-        chassis.wheel[i].set.curr = PID_calc(&chassis_pid.wheel_velocity[i], chassis.feedback[i], chassis.set[i]);
+        chassis.wheel[i].set.curr = PID_calc(&chassis.wheel_velocity[i], chassis.feedback[i], chassis.set[i]);
     }
 }
 
@@ -254,7 +271,24 @@ void ChassisConsole(void)
 
 void ChassisSendCmd(void)
 {
-    CanCmdDjiMotor(CHASSIS_CAN, CHASSIS_STDID, chassis.wheel[3].set.curr, chassis.wheel[0].set.curr, chassis.wheel[1].set.curr, chassis.wheel[2].set.curr);
+    // 发送顺序必须与电机ID(1~4)一致，omni参数中轮子索引与ID存在映射关系:
+    CanCmdDjiMotor(
+        CHASSIS_CAN, CHASSIS_STDID, g_chassis_power_control.motor_speed_pid[3]->out,
+        g_chassis_power_control.motor_speed_pid[0]->out,
+        g_chassis_power_control.motor_speed_pid[1]->out,
+        g_chassis_power_control.motor_speed_pid[2]->out);
+
+    //CanCmdDjiMotor(CHASSIS_CAN, CHASSIS_STDID, chassis.wheel[3].set.curr, chassis.wheel[0].set.curr, chassis.wheel[1].set.curr, chassis.wheel[2].set.curr);
+
+    //     // 发送超级电容控制命令（测试用）
+//        fp32 current_power, current_buffer;
+//        get_chassis_power_and_buffer(&current_power, &current_buffer);  // 从裁判系统获取实时数据
+
+//       uint16_t power_buffer = (uint16_t)current_buffer;  // 从裁判系统获取的当前缓冲能量
+//       uint16_t power_limit = 40;                         // 功率限制值，可根据比赛规则调整
+//       uint8_t automode_stage = 0;                        // 启用超级电容
+
+//       CanCmdSupCap(1, power_buffer, power_limit, automode_stage);
 }
 
 

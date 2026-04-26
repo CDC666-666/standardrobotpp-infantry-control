@@ -22,6 +22,7 @@
 #ifndef CHASSIS_OMNI_H
 #define CHASSIS_OMNI_H
 #include "motor.h"
+#include "SupCap.h"//超级电容相关
 #include "IMU_task.h"
 #include "chassis.h"
 #include "math.h"
@@ -47,9 +48,9 @@ typedef enum {
  */
  typedef struct
 {
-    pid_type_def wheel_velocity[4];//麦轮速度解算PID
 
     pid_type_def follow; //云台跟随PID
+    
 } PID_t;   
 
 /**
@@ -75,9 +76,14 @@ typedef struct
     /*-------------------- Motors --------------------*/
     Motor_s wheel[4];  //底盘电机
 
+    /*-------------------- Super Capacitor --------------------*/
+    SupCap_s super_cap;  // 超级电容
+
     /*-------------------- Values --------------------*/
     Reference_t reference; 
     Reference_t reference_rc;
+
+    pid_type_def wheel_velocity[4];//全向轮速度解算PID，用于超级电容
 
     fp32 feedback[4];
     fp32 set[4];
