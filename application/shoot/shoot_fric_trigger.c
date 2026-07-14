@@ -94,7 +94,6 @@ void ShootSetMode(void)
         SHOOT.state = FRIC_NOT_READY;
         SHOOT.mode = LOAD_STOP;
         SHOOT.fric_flag = 0;
-        SHOOT.move_flag = 0;
         SHOOT.shoot_flag = 0;
         SHOOT.mr_time = 0;
    } 
@@ -514,7 +513,7 @@ void ShootSendCmd(void)
   {
 
     CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID , SHOOT.fric_motor[0].set.curr,SHOOT.fric_motor[1].set.curr,0, 0);
-    CanCmdDjiMotor(TRIGGER_MOTOR_CAN, 0x1FF , 0, 0, 0, SHOOT.trigger_motor.set.curr);
+    CanCmdDjiMotor(TRIGGER_MOTOR_CAN, 0x1FF , 0, SHOOT.trigger_motor.set.curr, 0, 0);
   }
   // else if (TRIGGER_MOTOR_TYPE == DM_4310)
   // {
