@@ -21,6 +21,10 @@
 #define USART_RX_BUF_LENGHT     512
 #define REFEREE_FIFO_BUF_LENGTH 1024
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
   * @brief          referee task
   * @param[in]      pvParameters: NULL
@@ -32,4 +36,9 @@
   * @retval         none
   */
 extern void referee_usart_task(void const * argument);
+extern void jlui_ui_task(void const * argument);
+
+#ifdef __cplusplus
+}
+#endif
 #endif
