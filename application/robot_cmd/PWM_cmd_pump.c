@@ -19,8 +19,8 @@
 #include "bsp_pwm.h"
 #include "main.h"
 
-#define PUMP_MIN_PWM 0
-#define PUMP_MAX_PWM 30000
+#define PUMP_MIN_PWM 500
+#define PUMP_MAX_PWM 2500
 /*-------------------- Public functions --------------------*/
 
 /**
@@ -33,6 +33,9 @@ void PwmCmdPump(uint8_t pump_id, uint16_t pwm)
 {
     if (pwm > PUMP_MAX_PWM) {
         pwm = PUMP_MAX_PWM;
+    } else if (pwm < PUMP_MIN_PWM) {
+        pwm = PUMP_MIN_PWM;
     }
+
     pump_pwm_set(pwm, pump_id);
 }
