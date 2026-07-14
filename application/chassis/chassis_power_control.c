@@ -1,4 +1,4 @@
-﻿#include "chassis_power_control.h"
+#include "chassis_power_control.h"
 
 #include "CAN_cmd_SupCap.h"
 #include "arm_math.h"
@@ -25,10 +25,10 @@ void chassis_power_control_init(Chassis_s * chassis)
         &g_chassis_power_control.buffer_pid, PID_POSITION, buffer_pid, 80.0f,
         10.0f);  // 最大输出80W，积分限幅10W
 
-    // 关联底盘电机和PID
+    // 关联底盘电机和最终电流指令
     for (uint8_t i = 0; i < 4; i++) {
         g_chassis_power_control.motor_chassis[i] = &chassis->wheel[i];
-        g_chassis_power_control.motor_speed_pid[i] = &chassis->wheel_velocity[i];
+        g_chassis_power_control.motor_current_cmd[i] = &chassis->wheel[i].set.curr;
     }
 
     // 关联超级电容
@@ -46,7 +46,7 @@ void chassis_power_control(void)
     uint16_t max_power_limit = 40;
     fp32 chassis_max_power = 0;
     float input_power = 0;        // 电池输入功率（来自裁判系统）
-    float initial_give_power[4];  // PID计算的初始功率
+    float initial_give_power[4];  // 电流指令对应的初始功率
     // float initial_total_power = 0;
     fp32 scaled_give_power[4];
 
@@ -62,47 +62,49 @@ void chassis_power_control(void)
 
     //这里封装了一层，尽量跟西交利物浦的原函数保持一致
     get_chassis_power_and_buffer_adapter(&chassis_power, &chassis_power_buffer);
-    PID_calc(
-        &g_chassis_power_control.buffer_pid, chassis_power_buffer, POWER_CONTROL_BUFFER_TARGET);
+    PID_calc(&g_chassis_power_control.buffer_pid, chassis_power_buffer, 30.0f);
     get_chassis_max_power_adapter(&max_power_limit);
-    input_power =
-        max_power_limit - g_chassis_power_control.buffer_pid
-                              .out;  // 输入功率浮动在最大功率附近（为了维持缓冲能量在30J）
+    input_power =max_power_limit - g_chassis_power_control.buffer_pid.out;  // 输入功率浮动在最大功率附近（为了维持缓冲能量在30J）
+    
+    // 电容开关控制
+    // if (g_chassis_power_control.rc_ctrl->key.v & KEY_PRESSED_OFFSET_E) {
+         g_chassis_power_control.cap_enable_state = 0;  // 按E键关闭电容
+    // }
+    //if (g_chassis_power_control.rc_ctrl->key.v & KEY_PRESSED_OFFSET_Q) {
+    //  g_chassis_power_control.cap_enable_state = 1;  // 按Q键打开电容
+    //}
+    
+
     CAN_CMD_CAP(input_power);        // 设置电容控制器的输入功率
 
-    // 电容开关控制
-    if (g_chassis_power_control.rc_ctrl->key.v & KEY_PRESSED_OFFSET_E) {
-        g_chassis_power_control.cap_enable_state = 0;  // 按E键关闭电容
-    }
-    if (g_chassis_power_control.rc_ctrl->key.v & KEY_PRESSED_OFFSET_Q) {
-        g_chassis_power_control.cap_enable_state = 1;  // 按Q键打开电容
-    }
 
     // 根据电容电量和状态调整最大功率
     if (g_chassis_power_control.super_cap->fdb.voltage_cap > POWER_CONTROL_CAP_LOW_THRESHOLD) {
-        if (g_chassis_power_control.cap_enable_state == 0) {
-            chassis_max_power =
-                input_power + 5;  // 略大于最大功率，避免电容一直满载，提高能量利用率
-        } else {
-            chassis_max_power =
-                input_power +
-                POWER_CONTROL_CAP_BOOST_POWER;  //包括裁判系统和超级电容带来的额外的功率
+        if (g_chassis_power_control.cap_enable_state == 0) 
+        {
+            chassis_max_power = input_power + 5;  // 略大于最大功率，避免电容一直满载，提高能量利用率
+        } 
+        else 
+        {
+            chassis_max_power = input_power + POWER_CONTROL_CAP_BOOST_POWER;  //包括裁判系统和超级电容带来的额外的功率
         }
-    } else {
+    } 
+    else 
+    {
         chassis_max_power = input_power;
     }
     //计算初始电机功率
 
     for (uint8_t i = 0; i < 4; i++)  // 首先获取所有初始电机功率和总电机功率
     {
-        initial_give_power[i] = g_chassis_power_control.motor_speed_pid[i]->out *
-                                    toque_coefficient *
-                                    g_chassis_power_control.motor_chassis[i]->fdb.vel * 60.0f /
-                                    (2.0f * M_PI) +  // 转换为RPM
-                                k2 * g_chassis_power_control.motor_chassis[i]->fdb.vel *
-                                    g_chassis_power_control.motor_chassis[i]->fdb.vel +
-                                a * g_chassis_power_control.motor_speed_pid[i]->out *
-                                    g_chassis_power_control.motor_speed_pid[i]->out +
+        const fp32 motor_current = *g_chassis_power_control.motor_current_cmd[i];
+
+        initial_give_power[i] = motor_current * toque_coefficient *
+                                     g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f /(2.0f * M_PI)) +  // 转换为RPM
+                                k2 * g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f /(2.0f * M_PI)) *
+                                     g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f /(2.0f * M_PI)) +
+                                a * motor_current *
+                                    motor_current +
                                 constant;
 
         if (initial_give_power[i] < 0)  // 负功率不包括在内（瞬态）
@@ -110,12 +112,11 @@ void chassis_power_control(void)
         // initial_total_power += initial_give_power[i];  //缩放前的总功率
         g_initial_total_power_debug += initial_give_power[i];  //缩放前的总功率
     }
-    //反向计算新的PID输出
+    //反向计算新的电流输出
     // if (initial_total_power >
     if (g_initial_total_power_debug >
         chassis_max_power)  // 判断是否大于最大功率（包括裁判系统和超级电容带来的额外的功率）
     {
-        // fp32 power_scale = chassis_max_power / initial_total_power;  //得到功率缩放系数
         fp32 power_scale = chassis_max_power / g_initial_total_power_debug;  //得到功率缩放系数
         for (uint8_t i = 0; i < 4; i++) {
             scaled_give_power[i] = initial_give_power[i] * power_scale;  // 获取缩放后的功率
@@ -124,33 +125,35 @@ void chassis_power_control(void)
             }
 
             //拟合电机功率的模型
-            fp32 b = toque_coefficient * g_chassis_power_control.motor_chassis[i]->fdb.vel * 60.0f /
-                     (2.0f * M_PI);
-            fp32 c = a * g_chassis_power_control.motor_chassis[i]->fdb.vel *
-                         g_chassis_power_control.motor_chassis[i]->fdb.vel -
-                     scaled_give_power[i] + constant;
+            fp32 b = toque_coefficient * 
+                     g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f / (2.0f * M_PI));
+            fp32 c = a * g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f /(2.0f * M_PI)) *   
+                         g_chassis_power_control.motor_chassis[i]->fdb.vel * (60.0f /(2.0f * M_PI)) -
+                         scaled_give_power[i] + constant;
             fp32 inside = b * b - 4 * a * c;
             //无解，保持原来的状态
-            if (inside < 0) {
-                continue;
+            if (inside < 0) 
+            {
+                continue;   
             }
 
-            else if (
-                g_chassis_power_control.motor_speed_pid[i]->out >
-                0)  // 根据原始力矩的方向选择计算公式
+            else if (*g_chassis_power_control.motor_current_cmd[i] > 0)  // 根据原始力矩的方向选择计算公式
             {
                 fp32 temp = (-b + sqrt(inside)) / (2 * a);
-                if (temp > POWER_CONTROL_MAX_CURRENT)  //如果超过最大电流，以最大电流位准
+                if (temp > 16000)  //如果超过最大电流，以最大电流位准
                 {
-                    g_chassis_power_control.motor_speed_pid[i]->out = POWER_CONTROL_MAX_CURRENT;
-                } else
-                    g_chassis_power_control.motor_speed_pid[i]->out = temp;
-            } else {
+                    *g_chassis_power_control.motor_current_cmd[i] = 16000;
+                } 
+                else
+                    *g_chassis_power_control.motor_current_cmd[i] = temp;
+            } 
+            else 
+            {
                 fp32 temp = (-b - sqrt(inside)) / (2 * a);
-                if (temp < -POWER_CONTROL_MAX_CURRENT) {
-                    g_chassis_power_control.motor_speed_pid[i]->out = -POWER_CONTROL_MAX_CURRENT;
+                if (temp < -16000) {
+                    *g_chassis_power_control.motor_current_cmd[i] = -16000;
                 } else
-                    g_chassis_power_control.motor_speed_pid[i]->out = temp;
+                    *g_chassis_power_control.motor_current_cmd[i] = temp;
             }
         }
     }

@@ -18,7 +18,7 @@
 CanCtrlData_s CAN_CTRL_DATA = {
     .tx_header.IDE = CAN_ID_STD,
     .tx_header.RTR = CAN_RTR_DATA,
-    .tx_header.DLC = 2,
+    .tx_header.DLC = 5,
 };
 
 /**
@@ -27,7 +27,7 @@ CanCtrlData_s CAN_CTRL_DATA = {
  * @param[in]      power 超电控制功率
  * @return         none
  */
-void CanCmdSupCap(uint8_t can, int16_t power)
+void CanCmdSupCap(uint8_t can, uint16_t power_buffer, uint16_t power_limit, uint8_t automode_stage)
 {
     hcan_t * hcan = NULL;
     if (can == 1)
@@ -35,15 +35,24 @@ void CanCmdSupCap(uint8_t can, int16_t power)
     else if (can == 2)
         hcan = &hcan2;
     if (hcan == NULL) return;
-
+                                                                       
     CAN_CTRL_DATA.hcan = hcan;
 
-    CAN_CTRL_DATA.tx_header.StdId = 0x210;
+    CAN_CTRL_DATA.tx_header.StdId = 426;
+     
+    // 第0，1字节：power_buffer 缓冲能量发送值 (小端序)
+    CAN_CTRL_DATA.tx_data[0] = (power_buffer & 0xFF);
+    CAN_CTRL_DATA.tx_data[1] = (power_buffer >> 8) & 0xFF;
+         
+    // 第2，3字节：power_limit 功率限制值 (小端序)
+    CAN_CTRL_DATA.tx_data[2] = (power_limit & 0xFF);
+    CAN_CTRL_DATA.tx_data[3] = (power_limit >> 8) & 0xFF;
 
-    CAN_CTRL_DATA.tx_data[0] = (power >> 8);
-    CAN_CTRL_DATA.tx_data[1] = power;
-
+    // 第4字节：automode_stage 是否开启电容
+    CAN_CTRL_DATA.tx_data[4] = automode_stage;
+    
     CAN_SendTxMessage(&CAN_CTRL_DATA);
+
 }
 
 /************************ END OF FILE ************************/

@@ -26,9 +26,7 @@ extern "C" {
 #endif
 
 /*-------------------- 功率控制参数定义 --------------------*/
-#define POWER_CONTROL_BUFFER_TARGET 30.0f          // 缓冲能量目标值
-#define POWER_CONTROL_MAX_CURRENT 16000            // 电机最大输出电流
-#define POWER_CONTROL_TORQUE_COEFF 1.99688994e-6f  // 扭矩系数
+#define POWER_CONTROL_TORQUE_COEFF 2.43243860e-6f  // 扭矩系数(20/16384)*(0.3)*(17/268)/9.55  Kt
 #define POWER_CONTROL_K1_COEFF 1.23e-07f           // k1系数
 #define POWER_CONTROL_K2_COEFF 1.453e-07f         // k2系数
 #define POWER_CONTROL_CONSTANT 4.081f              // 常数项
@@ -42,8 +40,8 @@ typedef struct
     pid_type_def buffer_pid;  // 功率缓冲区PID控制器
 
     // 电机相关
-    Motor_s * motor_chassis[4];         // 底盘电机指针数组
-    pid_type_def * motor_speed_pid[4];  // 电机速度PID指针数组    // 功率数据
+    Motor_s * motor_chassis[4];    // 底盘电机指针数组
+    float * motor_current_cmd[4];  // 最终待发送电流指令指针数组
     float chassis_power;                // 当前底盘功率
     float chassis_power_buffer;         // 当前功率缓冲能量
     uint16_t max_power_limit;           // 最大功率限制
@@ -76,9 +74,18 @@ void chassis_power_control_init(Chassis_s * chassis);
  * @param[in]      none  
  * @retval         none
  * @note           在chassis_task中ChassisConsole()之后调用
- *                 对电机PID输出进行功率限制
+ *                 对最终电流指令进行功率限制
  */
 void chassis_power_control(void);
+
+// /**
+//  * @brief          获取底盘功率和缓冲能量
+//  * @param[out]     power: 底盘功率指针
+//  * @param[out]     buffer: 缓冲能量指针
+//  * @retval         none
+//  * @note           实现在 referee.c 中，这里显式声明给底盘功率控制模块使用
+//  */
+// void get_chassis_power_and_buffer(fp32 * power, fp32 * buffer);
 
 /**
  * @brief          获取底盘功率和缓冲能量

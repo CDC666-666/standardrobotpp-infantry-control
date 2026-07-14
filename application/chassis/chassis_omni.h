@@ -5,10 +5,10 @@
   * @note       包括初始化，目标量更新、状态量更新、控制量计算与直接控制量的发送
   * @history
   *  Version    Date            Author          Modification
-  *  V1.0.0   2025.03.03      Harry_Wong        1.重新构建全向轮底盘代码，完成基础控制
-  *  V1.1.0   2025.11.05       CJH              1. 完成底盘与云台协同控制
-  *                                             2. 完成底盘键鼠控制
-  *                                             3. 修正全向轮解算的错误
+  *  V1.0.0   2025.03.03      Harry_Wong        1.??????????????????
+  *  V1.1.0   2025.11.05       CJH              1. ???????????
+  *                                             2. ????????
+  *                                             3. ??????????
   *
   @verbatim
   ==============================================================================
@@ -83,10 +83,23 @@ typedef struct
     Reference_t reference; 
     Reference_t reference_rc;
 
-    pid_type_def wheel_velocity[4];//全向轮速度解算PID，用于超级电容
+    pid_type_def wheel_vel[4];//???????PID???????
+    pid_type_def vel_x_pid;   //???? PID
+    pid_type_def vel_y_pid;   //???? PID
+    pid_type_def omega_pid;   //??? PID
 
     fp32 feedback[4];
-    fp32 set[4];
+    fp32 set[4];//rad/s,rad/s,rad/s,rad/s
+    fp32 wheel_force[4];//????
+    
+    fp32 P_vx;//????x
+    fp32 P_vy;//????y
+    fp32 P_wz;//???z
+
+    fp32 force_x;//?x
+    fp32 force_y;//?y
+    fp32 torque_wz;//??z
+
 
     fp32 yaw_delta;//云台相对底盘的偏航差
     ChassisMode_e spin_mode_last;
@@ -98,13 +111,7 @@ typedef struct
     fp32 spin_target_wz;
     fp32 wz_error;
 
-    uint16_t x_time;
-    uint16_t y_time;
-    uint8_t spin_flag;
-    uint8_t shift_flag;
 
-    uint8_t sc_flag;
-    uint32_t f_flag;
 } Chassis_s;
 
 extern Chassis_s chassis;
@@ -125,4 +132,5 @@ extern void ChassisSendCmd(void);
 
 #endif 
 #endif
+
 

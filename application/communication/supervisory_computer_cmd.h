@@ -22,7 +22,7 @@
 
 //API
 
-extern inline uint8_t GetUsbStatus(void);
+uint8_t GetUsbStatus(void);
 extern inline float GetScCmdChassisSpeed(uint8_t axis);
 extern inline float GetScCmdChassisVelocity(uint8_t axis);
 extern inline float GetScCmdChassisAngle(uint8_t axis);
