@@ -21,7 +21,7 @@
 #include "stm32f4xx_hal.h"
 #include "struct_typedef.h"
 
-extern void CanCmdSupCap(uint8_t can, int16_t power);
+extern void CanCmdSupCap(uint8_t can, uint16_t power_buffer, uint16_t power_limit, uint8_t automode_stage);
 
 #endif
 /************************ END OF FILE ************************/

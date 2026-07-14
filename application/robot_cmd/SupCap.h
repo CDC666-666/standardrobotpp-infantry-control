@@ -27,10 +27,12 @@ typedef enum {
 
 typedef struct
 {
-    int16_t voltage_in;
-    int16_t voltage_cap;
-    int16_t current_in;
-    int16_t power_target;
+    uint8_t dcdc_status;       // DCDC模式状态 (0=关闭, 1=放电, 2=充电)
+    uint8_t cap_enable;        // 自动模式阶段 (0=关闭, 1=开启)
+    int16_t cap_voltage;       // 电容电压*100
+    int16_t inductor_current;  // 电感电流*100
+    int16_t bus_power;         // 总线功率*100
+
 
     uint32_t last_fdb_time;  //上次反馈时间
 } SupCapMeasure_s;
@@ -48,10 +50,14 @@ typedef struct
 
     struct
     {
-        float voltage_in;    // (V)输入电压
-        float voltage_cap;   // (V)电容电压
-        float current_in;    // (A)输入电流
-        float power_target;  // (W)目标功率
+        float voltage_cap;       // (V)电容电压
+        uint8_t dcdc_status;     // DCDC状态
+        uint8_t cap_enable;      // 电容是否启用
+        float inductor_current;  // (A)电感电流
+        float bus_current;       // (A)总线电流
+        float energy;
+        float per_energy;
+
     } fdb;
 
     struct

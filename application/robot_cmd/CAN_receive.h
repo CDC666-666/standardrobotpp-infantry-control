@@ -69,6 +69,14 @@ typedef enum __LkMotorType{
 } LkMotorType_e;
 // clang-format on
 
+// typedef struct
+// {
+//     float accel_x, accel_y, accel_z;  // 加速度数据
+//     float gyro_x, gyro_y, gyro_z;     // 陀螺仪数据
+//     float euler_x, euler_y, euler_z;  // 欧拉角数据
+//     uint32_t last_fdb_time;           // 上次反馈时间
+// } ImuMeasure_s;
+
 extern const DjiMotorMeasure_t * GetDjiMotorMeasurePoint(uint8_t can, uint8_t i);
 
 extern CybergearModeState_e GetCybergearModeState(Motor_s * p_motor);

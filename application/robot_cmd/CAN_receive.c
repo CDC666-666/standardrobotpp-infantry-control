@@ -121,17 +121,22 @@ void LkFdbData(LkMeasure_s * lk_measure, uint8_t * rx_data)
 
 /**
  * @brief        SupCapFdbData: 获取超级电容反馈数据函数
- * @param[out]   dm_measure 电机数据缓存
+ * @param[out]   sup_cap_measure 超级电容数据缓存
  * @param[in]    rx_data 指向包含反馈数据的数组指针
- * @note         从接收到的数据中提取LK电机的反馈信息
+ * @note         根据DCDC.c分析的实际数据格式：
+ *               第0字节：DCDC模式状态 (0=关闭, 1=放电, 2=充电)
+ *               第1字节：自动模式阶段 (0=关闭, 1=开启)
+ *               第2-3字节：电容电压*100 (小端序)
+ *               第4-5字节：电感电流*100 (小端序)
+ *               第6-7字节：总线功率*100 (小端序)
  */
 void SupCapFdbData(SupCapMeasure_s * sup_cap_measure, uint8_t * rx_data)
-{
-    sup_cap_measure->voltage_in = (uint16_t)(rx_data[1] << 8 | rx_data[0]);
-    sup_cap_measure->voltage_cap = (uint16_t)(rx_data[3] << 8 | rx_data[2]);
-    sup_cap_measure->current_in = (uint16_t)(rx_data[5] << 8 | rx_data[4]);
-    sup_cap_measure->power_target = (uint16_t)(rx_data[7] << 8 | rx_data[6]);
-
+ {
+    sup_cap_measure->dcdc_status = rx_data[0];                                      // DCDC模式状态
+    sup_cap_measure->cap_enable = rx_data[1];                                       // 自动模式阶段
+    sup_cap_measure->cap_voltage = (int16_t)(rx_data[2] | (rx_data[3] << 8));       // 电容电压*100
+    sup_cap_measure->inductor_current = (int16_t)(rx_data[4] | (rx_data[5] << 8));  // 电感电流*100
+    sup_cap_measure->bus_power = (int16_t)(rx_data[6] | (rx_data[7] << 8));         // 总线功率*100
     sup_cap_measure->last_fdb_time = HAL_GetTick();
 }
 
@@ -147,7 +152,7 @@ static void DecodeStdIdData(hcan_t * CAN, CAN_RxHeaderTypeDef * rx_header, uint8
     switch (rx_header->StdId) {  //电机解码
         case DJI_M1_ID:
         case DJI_M2_ID:
-        case DJI_M3_ID:
+        case DJI_M3_ID:   
         case DJI_M4_ID:
         case DJI_M5_ID:
         case DJI_M6_ID:
@@ -199,16 +204,16 @@ static void DecodeStdIdData(hcan_t * CAN, CAN_RxHeaderTypeDef * rx_header, uint8
             }
             return;
         }
+        case 0x300: {  // 超级电容通信数据解码
+            SupCapFdbData(&SUP_CAP_MEASURE, rx_data);
+            return;
+        }
         default: {
             break;
         }
     }
 
-    //超级电容通信数据解码
-    if (rx_header->StdId == 0x211) {
-        SupCapFdbData(&SUP_CAP_MEASURE, rx_data);
-        return;
-    }
+   
 
     //板间通信数据解码
     // clang-format off
@@ -518,16 +523,16 @@ uint16_t GetOtherBoardDataUint16(uint8_t data_id, uint8_t data_offset)
     return OTHER_BOARD_DATA_UINT16[data_id][data_offset];
 }
 
-/**
- * @brief          获取超级电容反馈数据
- * @param[out]     p_sup_cap 超级电容结构体 
- * @note           测试期间临时使用，后续将会删除，正式版中使用GetSupCapMeasure
- * @return         none
- */
-void GetSupCapFdbData(SupCapMeasure_s * p_sup_cap)
-{
-    memcpy(p_sup_cap, &SUP_CAP_MEASURE, sizeof(SupCapMeasure_s));
-}
+// /**
+//  * @brief          获取超级电容反馈数据
+//  * @param[out]     p_sup_cap 超级电容结构体 
+//  * @note           测试期间临时使用，后续将会删除，正式版中使用GetSupCapMeasure
+//  * @return         none
+//  */
+// void GetSupCapFdbData(SupCapMeasure_s * p_sup_cap)
+// {
+//     memcpy(p_sup_cap, &SUP_CAP_MEASURE, sizeof(SupCapMeasure_s));
+// }
 
 /**
  * @brief          获取超级电容反馈数据
@@ -536,11 +541,23 @@ void GetSupCapFdbData(SupCapMeasure_s * p_sup_cap)
  */
 void GetSupCapMeasure(SupCap_s * p_sup_cap)
 {
-    p_sup_cap->fdb.voltage_in = SUP_CAP_MEASURE.voltage_in / 100.0f;
-    p_sup_cap->fdb.voltage_cap = SUP_CAP_MEASURE.voltage_cap / 100.0f;
-    p_sup_cap->fdb.current_in = SUP_CAP_MEASURE.current_in / 50.0f;
-    p_sup_cap->fdb.power_target = SUP_CAP_MEASURE.power_target;
-}
+    uint32_t now = HAL_GetTick();
+
+    p_sup_cap->fdb.dcdc_status = SUP_CAP_MEASURE.dcdc_status;
+    p_sup_cap->fdb.cap_enable = SUP_CAP_MEASURE.cap_enable;
+    p_sup_cap->fdb.voltage_cap = SUP_CAP_MEASURE.cap_voltage / 100.0f;            // 电容电压
+    p_sup_cap->fdb.inductor_current = SUP_CAP_MEASURE.inductor_current / 100.0f;  // 电感电流
+    p_sup_cap->fdb.bus_current =SUP_CAP_MEASURE.bus_power / 100.0f;  // 总线功率 (注意这里是功率不是电流)
+    //用来UI绘图 百分比直观一些
+    p_sup_cap->fdb.energy =  (p_sup_cap->fdb.voltage_cap*p_sup_cap->fdb.voltage_cap - 14.5f*14.5f) * 0.5f * 5.f;
+    p_sup_cap->fdb.per_energy =p_sup_cap->fdb.energy/1072.5f*100.0f;
+
+    if (now - SUP_CAP_MEASURE.last_fdb_time > CAN_OFFLINE_TIME) {
+        p_sup_cap->offline = true;
+    } else {
+        p_sup_cap->offline = false;
+    }
+   }
 
 bool GetBoardCanOffline(void)
 {
