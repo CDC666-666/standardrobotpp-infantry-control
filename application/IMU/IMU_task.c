@@ -350,7 +350,7 @@ static void imu_temp_control(fp32 temp)
   */
 const fp32 *get_INS_quat_point(void)
 {
-    return INS_quat;
+    return  INS.q;//INS_quat;
 }
 
 /**

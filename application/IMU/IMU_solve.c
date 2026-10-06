@@ -449,7 +449,7 @@ void IMU_QuaternionEKF_Update(float gx, float gy, float gz, float ax, float ay, 
     INS.q[3] = INS.IMU_QuaternionEKF.FilteredValue[3];
     INS.GyroBias[0] = INS.IMU_QuaternionEKF.FilteredValue[4];
     INS.GyroBias[1] = INS.IMU_QuaternionEKF.FilteredValue[5];
-    //INS.GyroBias[2] = __GYRO_BIAS_YAW; // 陀螺仪yaw零飘，单位rad/s(在参数文件中配置)
+    INS.GyroBias[2] = __GYRO_BIAS_YAW; // 陀螺仪yaw零飘，单位rad/s(在参数文件中配置)
 
     // 四元数反解欧拉角
     INS.angle[0] = atan2f(2.0f * (INS.q[0] * INS.q[1] + INS.q[2] * INS.q[3]), 2.0f * (INS.q[0] * INS.q[0] + INS.q[3] * INS.q[3]) - 1.0f);

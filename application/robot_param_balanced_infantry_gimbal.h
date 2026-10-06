@@ -12,7 +12,7 @@
 
 // clang-format off
 #define __SELF_BOARD_ID C_BOARD_BALANCE_GIMBAL  // 本板ID
-#define __GYRO_BIAS_YAW  0.003096855f           // 陀螺仪零飘，单位rad/s
+#define __GYRO_BIAS_YAW  0.001836381f  // 陀螺仪零飘，单位rad/s
 
 #define __CONTROL_LINK_RC  CL_RC_UART2   // 控制链路选择：RC遥控器
 #define __CONTROL_LINK_KM  CL_KM_RC      // 控制链路选择：键鼠数据
