@@ -58,6 +58,10 @@ inline float ChassisGetSpeedVx(void);
  */
 inline float ChassisGetSpeedVy(void);
 
+#if (CHASSIS_TYPE == CHASSIS_OMNI_WHEEL)
+float ChassisGetSpeedWz(void);
+#endif
+
 
 
 #endif  // CHASSIS_TYPE

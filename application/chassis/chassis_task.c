@@ -74,7 +74,7 @@ void chassis_task(void const * pvParameters)
         // 计算控制量
         ChassisConsole();
         //功率控制
-        chassis_power_control();
+        //chassis_power_control();
         // 发送控制量
         ChassisSendCmd();
         // 系统延时

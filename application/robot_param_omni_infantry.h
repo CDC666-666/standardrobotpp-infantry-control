@@ -30,10 +30,10 @@
 #define CHASSIS_STDID (0x200)
 
 //电机ID ---------------------
-#define WHEEL_1_ID (2)
-#define WHEEL_2_ID (3)
-#define WHEEL_3_ID (4)
-#define WHEEL_4_ID (1)
+#define WHEEL_1_ID (1)
+#define WHEEL_2_ID (2)
+#define WHEEL_3_ID (3)
+#define WHEEL_4_ID (4)
 
 //电机CAN ---------------------
 #define WHEEL_1_CAN (1)
@@ -67,18 +67,50 @@
 
 //PID parameters ---------------------
 //驱动轮速度环PID参数
-#define KP_OMNI_VEL (170.0f)
+#define KP_OMNI_VEL (15.0f)
 #define KI_OMNI_VEL (0.00f)
-#define KD_OMNI_VEL (0.1f)
+#define KD_OMNI_VEL (55.0f)
 #define MAX_IOUT_OMNI_VEL (1000.0f)
 #define MAX_OUT_OMNI_VEL (16000.0f)
 
+// M3508 + C620：采用标称参数换算，并非实测轮端力标定。
+// 0.3 N*m/A 对应原装 P19 减速箱输出轴；需先将其折算到转子侧。
+#define CHASSIS_M3508_KT_ROTOR (0.3f / (3591.0f / 187.0f))
+#define CHASSIS_WHEEL_KT (CHASSIS_M3508_KT_ROTOR * REDUCTION_RATIO)
+#define CHASSIS_C620_CMD_PER_AMP (16384.0f / 20.0f)
+// 单位为 A/(电机角速度 rad/s)：保留原速度误差系数所对应的 1 个 CAN 原始指令单位。
+#define CHASSIS_SPEED_CURRENT_K_A (20.0f / 16384.0f)
+
+// 单位换算：原增益和限幅值 * 0.0240510129490393。
+// 当 n=268/17、r=0.08 m 时，该换算系数为 80 * 轮端标称 Kt / 819.2。
+// 固定换算后的数值：后续修改 Kt 时，不得自动重新缩放 PID 参数。
+// 保留原参数记录：Kp=100、Ki=0、Kd=0、积分限幅=1000、输出限幅=16000。
+// 平面运动控制输出为期望力（N），Kp 的单位为 N/(m/s)。积分项和微分项采用 PID_calc 的离散计算约定。
+// #define KP_OMNI_PLAIN_VEL (100.0f)
+#define KP_OMNI_PLAIN_VEL (12.4051013f)
+#define KI_OMNI_PLAIN_VEL (0.0f)
+#define KD_OMNI_PLAIN_VEL (0.9f)
+#define MAX_IOUT_OMNI_PLAIN_VEL (24.051013f)
+#define MAX_OUT_OMNI_PLAIN_VEL (384.8162f)
+
+// 独立偏航环：输出为期望底盘力矩（N*m），Kp 的单位为 (N*m)/(rad/s)。
+// 这些初始值保留当前除以 (4*L) 的力分配方式，不沿用旧版乘以 L 的错误。
+#define KP_OMNI_OMEGA (6.4051013f)
+#define KI_OMNI_OMEGA (0.0f)
+#define KD_OMNI_OMEGA (0.0f)
+#define MAX_IOUT_OMNI_OMEGA (24.051013f)
+#define MAX_OUT_OMNI_OMEGA (384.8162f)
+
 //云台跟随角度环PID参数
-#define KP_CHASSIS_FOLLOW_GIMBAL (3.0f)      
+#define KP_CHASSIS_FOLLOW_GIMBAL (13.5f)
 #define KI_CHASSIS_FOLLOW_GIMBAL (0.0f)     
-#define KD_CHASSIS_FOLLOW_GIMBAL (0.45f)      
+#define KD_CHASSIS_FOLLOW_GIMBAL (5.05f)
 #define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f) 
 #define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (15.0f) 
+//跟随停止与角速度阻尼参数
+#define CHASSIS_FOLLOW_WZ_DAMPING (0.95f)    //底盘角速度阻尼系数
+// 小陀螺平移前瞻时间，单位秒；按实车偏移调节，设为 0 关闭补偿。
+#define CHASSIS_SPIN_LEAD_TIME (0.10f)
 
 //RC parametes ---------------------
 //遥控器相关参数
@@ -204,6 +236,7 @@
 #define MOTOR_RPM_TO_SPEED          0.00290888208665721596153948461415f
 #define MOTOR_ECD_TO_ANGLE          0.000021305288720633905968306772076277f
 #define FULL_COUNT                  18
+#define REDUCTION_RATIO             15.7647058824f   //齿轮减速比
 
 /*BLOCK&REVERSE parameters------------*/
 
