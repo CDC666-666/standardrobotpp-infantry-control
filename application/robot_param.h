@@ -22,8 +22,19 @@
 #include "robot_typedef.h"
 #include "struct_typedef.h"
 
+// USART1 (C-board connector labelled UART2): VOFA-only TX when enabled.
+// Disabling this does NOT uncomment the two remote-control relay calls.
+#ifndef VOFA_ENABLE
+#define VOFA_ENABLE 1
+#endif
+#ifndef VOFA_PERIOD_MS
+#define VOFA_PERIOD_MS 10U
+#endif
+#define VOFA_BAUDRATE 115200UL
+
 //导入具体的机器人参数配置文件
 #include "robot_param_omni_infantry.h"
+//#include "robot_param_mecannum.h"
 
 // 选择机器人的各种类型
 #define __RC_TYPE RC_DT7         // 遥控器类型
@@ -36,9 +47,9 @@
 #define __IMU_CONTROL_TEMPERATURE 35 // (度)IMU目标控制温度
 
 #define __BOARD_INSTALL_SPIN_MATRIX    \
-{1.0f, 0.0f, 0.0f},                     \
-{0.0f, 1.0f, 0.0f},                     \
-{0.0f, 0.0f, 1.0f} \
+{0.0f, -1.0f, 0.0f},                    \
+{1.0f,  0.0f, 0.0f},                    \
+{0.0f,  0.0f, 1.0f} \
 
 // USB通信的部分选项
 #define __USB_SEND_DEBUG 1  // 发送DEBUG数据
@@ -84,6 +95,21 @@
 
 #ifndef CUSTOM_CONTROLLER_TYPE
 #define CUSTOM_CONTROLLER_TYPE CUSTOM_CONTROLLER_NONE
+#endif
+
+#if (VOFA_ENABLE != 0) && (VOFA_ENABLE != 1)
+#error "VOFA_ENABLE must be 0 or 1"
+#endif
+#if VOFA_ENABLE
+#if VOFA_PERIOD_MS < 1 || VOFA_PERIOD_MS > 1000
+#error "VOFA_PERIOD_MS must be in [1, 1000]"
+#endif
+#if CUSTOM_CONTROLLER_TYPE != CUSTOM_CONTROLLER_NONE
+#error "VOFA and custom-controller PC output both require USART1"
+#endif
+#if __CONTROL_LINK_RC == CL_RC_UART2 || __CONTROL_LINK_PS2 == CL_PS2_UART2 || __VIRTUAL_GIMBAL_FROM == VG_FROM_UART2
+#error "VOFA TX-only mode cannot receive board control data on USART1"
+#endif
 #endif
 
 #endif /* ROBOT_PARAM_H */

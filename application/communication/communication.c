@@ -19,16 +19,21 @@
 
 #include "communication.h"
 
+#include <string.h>
+
 #include "CRC8_CRC16.h"
 #include "bsp_uart.h"
 #include "bsp_usart.h"
 #include "detect_task.h"
 #include "fifo.h"
 #include "gimbal.h"
+#include "gimbal_yaw_pitch_direct.h"
 #include "robot_param.h"
 #include "signal_generator.h"
 #include "uart2_typedef.h"
 #include "usb_debug.h"
+#include "vofa.h"
+#include "vofa_observe.h"
 
 /*******************************************************************************/
 /* Macro Definitions                                                           */
@@ -38,6 +43,12 @@
 
 #define USART_RX_BUF_LENGHT 512
 #define USART1_FIFO_BUF_LENGTH 1024
+
+#if VOFA_ENABLE
+// Read-only snapshots; edit only VOFA_SEND below to choose plotted channels.
+static ShootObservation shoot_obs;
+static ChassisObservation chassis_obs;
+#endif
 
 /**
  * @brief 数据包初始化宏定义
@@ -126,15 +137,23 @@ void Uart2SendDataInit(void)
 // 4pin Uart串口初始化
 void Usart1Init(void)
 {
+#if VOFA_ENABLE
+    VofaInit();
+#else
     fifo_s_init(&usart1_fifo, usart1_fifo_buf, USART1_FIFO_BUF_LENGTH);
     usart1_init(usart1_buf[0], usart1_buf[1], USART_RX_BUF_LENGHT);
 
     Uart2SendDataInit();
+#endif
 }
 
 // 4pin Uart口中断处理函数
 void USART1_IRQHandler(void)
 {
+#if VOFA_ENABLE
+    // Normal-mode DMA needs UART TC handling to finish the HAL TX lifecycle.
+    HAL_UART_IRQHandler(&huart1);
+#else
     static volatile uint8_t res;
     if (USART1->SR & UART_FLAG_IDLE) {
         __HAL_UART_CLEAR_PEFLAG(&huart1);
@@ -159,6 +178,7 @@ void USART1_IRQHandler(void)
             LastReceiveTime.Interrupt = HAL_GetTick();
         }
     }
+#endif
 }
 
 /*******************************************************************************/
@@ -328,8 +348,22 @@ void DataUnpack(void)
 
 void Uart2TaskLoop(void)
 {
-    TASK_DURATION = HAL_GetTick() - LAST_TASK_TIME;
-    LAST_TASK_TIME = HAL_GetTick();
+    uint32_t now = HAL_GetTick();
+
+    TASK_DURATION = now - LAST_TASK_TIME;
+    LAST_TASK_TIME = now;
+
+#if VOFA_ENABLE
+    VofaService();
+    ShootReadObservation(&shoot_obs);
+    ChassisReadObservation(&chassis_obs);
+
+#if CHASSIS_TYPE == CHASSIS_OMNI_WHEEL
+    VOFA_SEND(gimbal_direct.yaw.fdb.pos);  
+#else
+    // No omni chassis in this build: select supported fields above instead.
+#endif
+#else
 
 #if __SELF_BOARD_ID == C_BOARD_BALANCE_CHASSIS
     Uart2CheckDurationAndSend(Rc);
@@ -340,6 +374,7 @@ void Uart2TaskLoop(void)
 #endif
 
     DataUnpack();
+#endif
 }
 
 /*******************************************************************************/

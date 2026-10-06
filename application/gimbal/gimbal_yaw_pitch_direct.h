@@ -95,6 +95,11 @@ typedef struct
     bool init_continue; //是否继续进行校准模式
 } Gimbal_s;
 
+/* 云台实例，供调试与其他模块只读访问 */
+extern Gimbal_s gimbal_direct;
+// Snapshot of Gimbal_direct_init_judge()'s local delta_pitch, for VOFA.
+extern volatile fp32 delta_cdc;
+
 extern void GimbalInit(void);
 
 extern void GimbalHandleException(void);

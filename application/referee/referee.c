@@ -186,7 +186,7 @@ void referee_data_solve(uint8_t * frame)
 
 void get_chassis_power_and_buffer(fp32 * power, fp32 * buffer)
 {
-    *power = power_heat_data.chassis_power;
+    //*power = 0.0f;  // 新协议中移除了chassis_power字段
     *buffer = power_heat_data.buffer_energy;
 }
 

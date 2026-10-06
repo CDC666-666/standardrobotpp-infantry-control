@@ -259,7 +259,8 @@ void USART3_IRQHandler(void)
                 //记录数据接收时间
                 last_receive_time = HAL_GetTick();
                 detect_hook(DBUS_TOE);
-                sbus_to_usart1(sbus_rx_buf[0]);
+                // USART1 is reserved for VOFA. Local USART3 RC decoding is unchanged.
+                // sbus_to_usart1(sbus_rx_buf[0]);
             } 
             else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH)
             {
@@ -312,7 +313,8 @@ void USART3_IRQHandler(void)
                 //记录数据接收时间
                 last_receive_time = HAL_GetTick();
                 detect_hook(DBUS_TOE);
-                sbus_to_usart1(sbus_rx_buf[1]);
+                // Restore manually only when USART1 is no longer used for VOFA.
+                // sbus_to_usart1(sbus_rx_buf[1]);
             }
             else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH)
             {

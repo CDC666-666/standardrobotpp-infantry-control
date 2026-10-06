@@ -17,6 +17,7 @@
 
 #include "usb_task.h"
 
+#include <math.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -770,9 +771,21 @@ static bool verify_crc16(const uint8_t * data, uint32_t length)
 
 static void GetCmdData(void)
 {
-    if (RECEIVE_VISION_TO_GIMBAL_DATA.mode == 0) {
+    // CRC only checks transport integrity; reject invalid commands before any control use.
+    if (RECEIVE_VISION_TO_GIMBAL_DATA.mode == 0 ||
+        RECEIVE_VISION_TO_GIMBAL_DATA.mode > 2 ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.yaw) ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.pitch) ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.yaw_vel) ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.pitch_vel) ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.yaw_acc) ||
+        !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.pitch_acc)) {
         ROBOT_CMD_DATA.gimbal.yaw = CmdGimbalJointState(AX_YAW);
         ROBOT_CMD_DATA.gimbal.pitch = CmdGimbalJointState(AX_PITCH);
+        ROBOT_CMD_DATA.gimbal.yaw_vel = 0.0f;
+        ROBOT_CMD_DATA.gimbal.yaw_acc = 0.0f;
+        ROBOT_CMD_DATA.gimbal.pitch_vel = 0.0f;
+        ROBOT_CMD_DATA.gimbal.pitch_acc = 0.0f;
         ROBOT_CMD_DATA.shoot.fire = false;
         ROBOT_CMD_DATA.shoot.fric_on = false;
         return;
@@ -780,6 +793,10 @@ static void GetCmdData(void)
 
     ROBOT_CMD_DATA.gimbal.yaw = RECEIVE_VISION_TO_GIMBAL_DATA.yaw;
     ROBOT_CMD_DATA.gimbal.pitch = RECEIVE_VISION_TO_GIMBAL_DATA.pitch;
+    ROBOT_CMD_DATA.gimbal.yaw_vel = RECEIVE_VISION_TO_GIMBAL_DATA.yaw_vel;
+    ROBOT_CMD_DATA.gimbal.yaw_acc = RECEIVE_VISION_TO_GIMBAL_DATA.yaw_acc;
+    ROBOT_CMD_DATA.gimbal.pitch_vel = RECEIVE_VISION_TO_GIMBAL_DATA.pitch_vel;
+    ROBOT_CMD_DATA.gimbal.pitch_acc = RECEIVE_VISION_TO_GIMBAL_DATA.pitch_acc;
     ROBOT_CMD_DATA.shoot.fire = (RECEIVE_VISION_TO_GIMBAL_DATA.mode == 2);
     ROBOT_CMD_DATA.shoot.fric_on = true;
 }
@@ -838,6 +855,24 @@ inline float GetScCmdGimbalAngle(uint8_t axis)
     } else if (axis == AX_PITCH) {
         return ROBOT_CMD_DATA.gimbal.pitch;
     }
+    return 0.0f;
+}
+
+/** @brief 获取上位机云台轨迹速度参考，单位 rad/s */
+inline float GetScCmdGimbalVelocity(uint8_t axis)
+{
+    if (axis == AX_YAW) return ROBOT_CMD_DATA.gimbal.yaw_vel;
+    if (axis == AX_PITCH) return ROBOT_CMD_DATA.gimbal.pitch_vel;
+    return 0.0f;
+}
+
+/**
+ * @brief 获取上位机云台轨迹加速度，单位 rad/s^2
+ */
+inline float GetScCmdGimbalAcceleration(uint8_t axis)
+{
+    if (axis == AX_YAW) return ROBOT_CMD_DATA.gimbal.yaw_acc;
+    if (axis == AX_PITCH) return ROBOT_CMD_DATA.gimbal.pitch_acc;
     return 0.0f;
 }
 

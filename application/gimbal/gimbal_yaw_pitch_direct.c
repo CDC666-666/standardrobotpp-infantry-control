@@ -67,15 +67,14 @@ void Angle_solution(void)
 
 bool Gimbal_direct_init_judge (void)
 {
-  fp32 delta_yaw = loop_fp32_constrain(gimbal_direct.yaw.direction *
-      (GIMBAL_DIRECT_YAW_MID - gimbal_direct.yaw.fdb.pos), -M_PI, M_PI);
-  fp32 delta_pitch = gimbal_direct.pitch.direction *
-      (GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos);
-  delta_cdc = delta_pitch;
-  if (!gimbal_direct.yaw.offline && !gimbal_direct.pitch.offline &&
-      (delta_yaw < 0.03f && -0.03f < delta_yaw) &&
-      (delta_pitch < 0.03f && -0.03f < delta_pitch))
-      //  || gimbal_direct.init_timer >= GIMBAL_INIT_TIME)
+  fp32 delta_yaw = loop_fp32_constrain(gimbal_direct.yaw.direction * (GIMBAL_DIRECT_YAW_MID - gimbal_direct.yaw.fdb.pos), -M_PI, M_PI);
+  //fp32 delta_pitch = gimbal_direct.pitch.direction *(GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos);
+  fp32 delta_pitch = gimbal_direct.reference.pitch - gimbal_direct.feedback_pos.pitch;
+  delta_cdc = delta_yaw;//delta_pitch;
+
+  if (((delta_yaw < 0.03f && (-0.03f) < delta_yaw) &&
+       (delta_pitch < 0.03f && (-0.03f) < delta_pitch))
+       || gimbal_direct.init_timer >= GIMBAL_INIT_TIME)
   {
     return true;
   }
@@ -343,11 +342,7 @@ void GimbalReference(void)
 {
   switch (gimbal_direct.mode){
       case GIMBAL_INIT:{
-        // gimbal_direct.reference.pitch =
-        //     gimbal_direct.pitch.direction * (GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos) +
-        //     gimbal_direct.feedback_pos.pitch;
-        gimbal_direct.reference.pitch = gimbal_direct.pitch.direction *
-            (GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos) + gimbal_direct.feedback_pos.pitch;
+        gimbal_direct.reference.pitch = gimbal_direct.pitch.direction *(GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos) + gimbal_direct.feedback_pos.pitch;
         gimbal_direct.reference.yaw=loop_fp32_constrain(gimbal_direct.yaw.direction   * (GIMBAL_DIRECT_YAW_MID   - gimbal_direct.yaw.fdb.pos  ) + gimbal_direct.feedback_pos.yaw , -M_PI , M_PI);
         
         break;
@@ -407,10 +402,6 @@ void GimbalReference(void)
                 -M_PI,
                 M_PI);
 
-        // gimbal_direct.reference.pitch = fp32_constrain(
-        //         Gimbal_direct_ecd_to_imu(AX_PITCH, GetScCmdGimbalAngle(AX_PITCH)),
-        //         GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,
-        //         GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
         gimbal_direct.reference.pitch = fp32_constrain(
     -GetScCmdGimbalAngle(AX_PITCH),
     GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,
@@ -431,6 +422,33 @@ void GimbalReference(void)
  */
 void GimbalConsole(void) 
 {
+  // Match the first-cycle position hold: do not apply trajectory feedforward on entry.
+  const bool allow_plan_feedforward =
+      gimbal_direct.mode == GIMBAL_AUTO_AIM &&
+      gimbal_direct.last_mode == GIMBAL_AUTO_AIM;
+
+  // pitch 规划速度在上位机世界 pitch 坐标中表达；固件参考取了 -plan.pitch，故前馈也取负。
+  static fp32 plan_pitch_acc_filtered = 0.0f;
+  fp32 pitch_acc_current_ff = 0.0f;
+  if (allow_plan_feedforward && !gimbal_direct.pitch.offline) {
+      fp32 plan_pitch_acc = fp32_constrain(
+          GetScCmdGimbalAcceleration(AX_PITCH),
+          -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC,
+          MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC);
+      if (plan_pitch_acc != plan_pitch_acc) {
+          plan_pitch_acc = 0.0f;
+          plan_pitch_acc_filtered = 0.0f;
+      }
+      plan_pitch_acc_filtered += GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA *
+          (-plan_pitch_acc - plan_pitch_acc_filtered);
+      pitch_acc_current_ff = fp32_constrain(
+          GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN * plan_pitch_acc_filtered,
+          -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF,
+          MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF);
+  } else {
+      plan_pitch_acc_filtered = 0.0f;
+  }
+
   if (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR)
   {
 
@@ -462,8 +480,29 @@ void GimbalConsole(void)
         }
     }
     }else if(GIMBAL_DIRECT_PITCH_MOTOR_TYPE == DJI_M6020){
-      gimbal_direct.pitch.set.vel=PID_calc(&gimbal_direct_pid.pitch_angle,gimbal_direct.feedback_pos.pitch,gimbal_direct.reference.pitch);
-      gimbal_direct.pitch.set.curr=gimbal_direct.pitch.direction * PID_calc(&gimbal_direct_pid.pitch_velocity,gimbal_direct.feedback_vel.pitch,gimbal_direct.pitch.set.vel);
+      fp32 pitch_vel_cmd = PID_calc(
+          &gimbal_direct_pid.pitch_angle,
+          gimbal_direct.feedback_pos.pitch,
+          gimbal_direct.reference.pitch);
+      if (allow_plan_feedforward) {
+          fp32 plan_pitch_vel_ff = fp32_constrain(
+              GetScCmdGimbalVelocity(AX_PITCH),
+              -MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF,
+              MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF);
+          pitch_vel_cmd -= GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN * plan_pitch_vel_ff;
+      }
+      gimbal_direct.pitch.set.vel = fp32_constrain(
+          pitch_vel_cmd,
+          -MAX_OUT_GIMBAL_PITCH_ANGLE,
+          MAX_OUT_GIMBAL_PITCH_ANGLE);
+      fp32 pitch_velocity_current = PID_calc(
+          &gimbal_direct_pid.pitch_velocity,
+          gimbal_direct.feedback_vel.pitch,
+          gimbal_direct.pitch.set.vel);
+      gimbal_direct.pitch.set.curr = gimbal_direct.pitch.direction * fp32_constrain(
+          pitch_velocity_current + pitch_acc_current_ff,
+          -MAX_OUT_GIMBAL_PITCH_VELOCITY,
+          MAX_OUT_GIMBAL_PITCH_VELOCITY);
     }
     //Yaw速度控制
     fp32 delta_yaw=loop_fp32_constrain(gimbal_direct.reference.yaw-gimbal_direct.feedback_pos.yaw,-M_PI,M_PI);
@@ -472,14 +511,60 @@ void GimbalConsole(void)
     if (gimbal_direct.mode == GIMBAL_IMU || gimbal_direct.mode == GIMBAL_AUTO_AIM) {
         yaw_vel_cmd += GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD * ChassisGetSpeedWz();
     }
+    // 上位机 plan_yaw_vel 是动态轨迹前馈；首轮限幅，且只在自瞄模式启用。
+    if (allow_plan_feedforward) {
+        fp32 plan_yaw_vel_ff = fp32_constrain(
+            GetScCmdGimbalVelocity(AX_YAW),
+            -MAX_GIMBAL_DIRECT_YAW_PLAN_VEL_FF,
+            MAX_GIMBAL_DIRECT_YAW_PLAN_VEL_FF);
+        yaw_vel_cmd += GIMBAL_DIRECT_YAW_PLAN_VEL_FF_GAIN * plan_yaw_vel_ff;
+    }
+
+    // 上位机 plan_yaw_acc 只作小幅力矩前馈；惯量尚未实测，因此严格限幅并滤波。
+    static fp32 plan_yaw_acc_filtered = 0.0f;
+    fp32 yaw_acc_torque_ff = 0.0f;
+    if (allow_plan_feedforward && !gimbal_direct.yaw.offline) {
+        fp32 plan_yaw_acc = fp32_constrain(
+            GetScCmdGimbalAcceleration(AX_YAW),
+            -MAX_GIMBAL_DIRECT_YAW_PLAN_ACC,
+            MAX_GIMBAL_DIRECT_YAW_PLAN_ACC);
+        // 异常浮点值（NaN）不能进入 MIT 力矩命令。
+        if (plan_yaw_acc != plan_yaw_acc) {
+            plan_yaw_acc = 0.0f;
+            plan_yaw_acc_filtered = 0.0f;
+        }
+        plan_yaw_acc_filtered += GIMBAL_DIRECT_YAW_PLAN_ACC_FILTER_ALPHA *
+            (plan_yaw_acc - plan_yaw_acc_filtered);
+        yaw_acc_torque_ff = fp32_constrain(
+            GIMBAL_DIRECT_YAW_PLAN_ACC_FF_GAIN * plan_yaw_acc_filtered,
+            -MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF,
+            MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF);
+    } else {
+        plan_yaw_acc_filtered = 0.0f;
+    }
 
     //回中速度控制
     gimbal_direct.yaw.set.vel = gimbal_direct.yaw.direction * fp32_constrain(yaw_vel_cmd,
         -(gimbal_direct.mode == GIMBAL_INIT ? MAX_OUT_GIMBAL_YAW_ANGLE / 25.0f : MAX_OUT_GIMBAL_YAW_ANGLE),
          (gimbal_direct.mode == GIMBAL_INIT ? MAX_OUT_GIMBAL_YAW_ANGLE / 25.0f : MAX_OUT_GIMBAL_YAW_ANGLE));
 
-    //yaw力矩控制
-    
+    // 纯力矩 MIT：速度环输出单位为 N*m；设定与 DM 编码器反馈均为输出轴坐标。
+    // 失能/遥控器异常/离线时不保留上一拍力矩，并清除速度环历史。
+    if (gimbal_direct.mode == GIMBAL_ZERO_FORCE ||
+        gimbal_direct.mode == GIMBAL_DBUS_ERR ||
+        gimbal_direct.yaw.offline) {
+        gimbal_direct.yaw.set.tor = 0.0f;
+        PID_clear(&gimbal_direct_pid.yaw_velocity);
+    } else {
+        fp32 yaw_velocity_torque = PID_calc(
+            &gimbal_direct_pid.yaw_velocity,
+            gimbal_direct.yaw.fdb.vel,
+            gimbal_direct.yaw.set.vel);
+        gimbal_direct.yaw.set.tor = fp32_constrain(
+            yaw_velocity_torque + yaw_acc_torque_ff,
+            -MAX_OUT_GIMBAL_YAW_VELOCITY,
+            MAX_OUT_GIMBAL_YAW_VELOCITY);
+    }
 
 
 
@@ -508,10 +593,7 @@ void GimbalSendCmd(void)
         DmMitStop(&gimbal_direct.yaw);
         //DmMitStop(&gimbal_direct.pitch);
     } else {
-        //DmMitCtrlVelocity(&gimbal_direct.yaw, 2.0f);
-        DmMitCtrlVelocity(&gimbal_direct.yaw,gimbal_direct.mode == GIMBAL_INIT ? 1.0f : 1.5f);
-
-        //DmMitCtrlPosition(&gimbal_direct.pitch, 5.0f, 0.75f);
+        DmMitCtrlTorque(&gimbal_direct.yaw);
     }
 
   CanCmdDjiMotor(GIMBAL_CAN,GIMBAL_STDID,0,0,gimbal_direct.pitch.set.curr,0);

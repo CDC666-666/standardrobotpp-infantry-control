@@ -28,6 +28,8 @@ extern inline float GetScCmdChassisVelocity(uint8_t axis);
 extern inline float GetScCmdChassisAngle(uint8_t axis);
 extern inline float GetScCmdChassisHeight(void);
 extern inline float GetScCmdGimbalAngle(uint8_t axis);
+extern inline float GetScCmdGimbalVelocity(uint8_t axis);
+extern inline float GetScCmdGimbalAcceleration(uint8_t axis);
 extern inline bool GetScCmdFire(void);
 extern inline bool GetScCmdFricOn(void);
 extern inline float GetVirtualRcCh(uint8_t channel);

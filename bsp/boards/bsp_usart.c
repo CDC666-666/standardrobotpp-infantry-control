@@ -1,5 +1,6 @@
 #include "bsp_usart.h"
 #include "main.h"
+#include "robot_param.h"
 
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_tx;
@@ -10,6 +11,10 @@ extern DMA_HandleTypeDef hdma_usart6_tx;
 
 void usart1_init(uint8_t *rx1_buf, uint8_t *rx2_buf, uint16_t dma_buf_num)
 {
+#if VOFA_ENABLE
+    (void)rx1_buf; (void)rx2_buf; (void)dma_buf_num;
+    return; // Do not reconfigure the HAL-owned USART1 DMA streams.
+#else
 
     //enable the DMA transfer for the receiver and tramsmit request
     //使能DMA串口接收和发送
@@ -65,10 +70,12 @@ void usart1_init(uint8_t *rx1_buf, uint8_t *rx2_buf, uint16_t dma_buf_num)
     hdma_usart1_tx.Instance->PAR = (uint32_t) & (USART1->DR);
 
     usart1_tx_dma_init();
+#endif
 }
 
 void usart1_tx_dma_init(void)
 {
+#if !VOFA_ENABLE
 
     //enable the DMA transfer for the receiver and tramsmit request
     //使能DMA串口接收和发送
@@ -87,11 +94,16 @@ void usart1_tx_dma_init(void)
     hdma_usart1_tx.Instance->PAR = (uint32_t) & (USART1->DR);
     hdma_usart1_tx.Instance->M0AR = (uint32_t)(NULL);
     hdma_usart1_tx.Instance->NDTR = 0;
+#endif
 
 
 }
 void usart1_tx_dma_enable(uint8_t *data, uint16_t len)
 {
+#if VOFA_ENABLE
+    (void)data; (void)len;
+    return; // Legacy relay must never interrupt a VOFA DMA frame.
+#else
     //disable DMA
     //失效DMA
     __HAL_DMA_DISABLE(&hdma_usart1_tx);
@@ -107,6 +119,7 @@ void usart1_tx_dma_enable(uint8_t *data, uint16_t len)
     __HAL_DMA_SET_COUNTER(&hdma_usart1_tx, len);
 
     __HAL_DMA_ENABLE(&hdma_usart1_tx);
+#endif
 }
 
 
