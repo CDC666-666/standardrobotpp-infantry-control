@@ -49,6 +49,10 @@ typedef struct
     {
         float pitch;
         float yaw;
+        float yaw_vel;
+        float yaw_acc;
+        float pitch_vel;
+        float pitch_acc;
     } gimbal;
 
     struct
