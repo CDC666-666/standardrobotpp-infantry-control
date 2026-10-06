@@ -22,6 +22,8 @@
 #include "robot_param.h"
 #if (CHASSIS_TYPE == CHASSIS_OMNI_WHEEL)
 #include "chassis_omni.h"
+#include "vofa_observe.h"
+#include "vofa_port.h"
 #include "CAN_receive.h"
 #include "chassis.h"
 #include "usb_task.h"
@@ -340,6 +342,50 @@ float ChassisGetSpeedWz(void)
  * @retval         无
  */
 
+#if VOFA_ENABLE
+static ChassisObservation chassis_observation;
+static uint32_t chassis_observation_time;
+static uint8_t chassis_observation_ready;
+
+static void ChassisPublishObservation(void)
+{
+    ChassisObservation next;
+    uint32_t key;
+    unsigned i;
+    for (i = 0; i < 4; ++i) {
+        next.wheel[i].speed_ref = chassis.set[i];
+        next.wheel[i].speed_fdb = chassis.wheel[i].offline ? VofaUnavailable() : chassis.feedback[i];
+        next.wheel_current_fdb[i] = chassis.wheel[i].offline ? VofaUnavailable() : chassis.wheel[i].fdb.curr;
+        next.wheel[i].output_command = chassis.wheel[i].set.curr; // 经过输出保护后的 CAN 原始指令值
+        next.wheel[i].online = !chassis.wheel[i].offline;
+    }
+    next.vx_ref = chassis.reference.vx;
+    next.vx_fdb = chassis.P_vx;
+    next.vy_ref = chassis.reference.vy;
+    next.vy_fdb = chassis.P_vy;
+    next.vx_iout = chassis.vel_x_pid.Iout;
+    next.vy_iout = chassis.vel_y_pid.Iout;
+    next.wz_ref = chassis.reference.wz;
+    next.wz_fdb = chassis.P_wz;
+    next.mode = (float)chassis.mode;
+    key = VofaPortLock();
+    chassis_observation = next;
+    chassis_observation_time = HAL_GetTick();
+    chassis_observation_ready = 1;
+    VofaPortUnlock(key);
+}
+
+void ChassisReadObservation(ChassisObservation *out)
+{
+    uint32_t key = VofaPortLock();
+    if (chassis_observation_ready && HAL_GetTick() - chassis_observation_time <= VOFA_OBSERVATION_MAX_AGE_MS)
+        *out = chassis_observation;
+    else
+        memset(out, 0xff, sizeof(*out));
+    VofaPortUnlock(key);
+}
+#endif
+
 void ChassisSendCmd(void)
 {
 // #if 1 // TEMP lifted-wheel current test; change to 0 to restore normal chassis output.
@@ -395,6 +441,9 @@ void ChassisSendCmd(void)
     //   uint8_t automode_stage = 1;                        // 启用超级电容
 
     //   CanCmdSupCap(1, power_buffer, power_limit, automode_stage);
+#if VOFA_ENABLE
+    ChassisPublishObservation(); 
+#endif
 }
 
 #endif

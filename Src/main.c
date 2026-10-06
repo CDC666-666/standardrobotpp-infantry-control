@@ -39,6 +39,7 @@
 #include "bsp_can.h"
 #include "bsp_delay.h"
 #include "bsp_usart.h"
+#include "robot_param.h"
 #include "remote_control.h"
 
 #include "chassis_task.h"
@@ -143,7 +144,9 @@ int main(void)
     can_filter_init();
     delay_init();
     remote_control_init();
+#if !VOFA_ENABLE
     usart1_tx_dma_init();
+#endif
   /* USER CODE END 2 */
 
   /* Call init function for freertos objects (in freertos.c) */

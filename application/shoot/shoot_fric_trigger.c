@@ -22,6 +22,9 @@
 #include "shoot_fric_trigger.h"
 
 
+#include "vofa_observe.h"
+#include "vofa_port.h"
+
 #if (SHOOT_TYPE == SHOOT_FRIC_TRIGGER)
 
 static Shoot_s SHOOT = {
@@ -507,6 +510,55 @@ void ShootConsole(void)
  * @param[in]      none
  * @retval         none
  */
+#if VOFA_ENABLE
+static ShootObservation shoot_observation;
+static uint32_t shoot_observation_time;
+static uint8_t shoot_observation_ready;
+
+static void ShootPublishObservation(void)
+{
+    ShootObservation next;
+    uint32_t key;
+    memset(&next, 0xff, sizeof(next));
+    next.fric_left.speed_ref = SHOOT.REF.fric_speed_ref_L;
+    next.fric_right.speed_ref = SHOOT.REF.fric_speed_ref_R;
+    next.fric_left.online = !SHOOT.fric_motor[1].offline;
+    next.fric_right.online = !SHOOT.fric_motor[0].offline;
+    next.fric_left.speed_fdb = SHOOT.fric_motor[1].offline ? VofaUnavailable() : SHOOT.FDB.fric_speed_fdb_L;
+    next.fric_right.speed_fdb = SHOOT.fric_motor[0].offline ? VofaUnavailable() : SHOOT.FDB.fric_speed_fdb_R;
+    next.fric_left.output_command = SHOOT.fric_motor[1].set.curr;
+    next.fric_right.output_command = SHOOT.fric_motor[0].set.curr;
+    next.trigger.online = !SHOOT.trigger_motor.offline;
+    next.trigger.speed_ref = SHOOT.REF.trigger_speed_ref;
+    next.trigger.speed_fdb = SHOOT.trigger_motor.offline ? VofaUnavailable() : SHOOT.FDB.trigger_speed_fdb;
+    if (TRIGGER_MOTOR_TYPE == DJI_M2006) {
+        next.trigger.position_ref = SHOOT.REF.trigger_angel_ref;
+        next.trigger.position_fdb = SHOOT.trigger_motor.offline ? VofaUnavailable() : SHOOT.FDB.trigger_angel_fdb;
+        next.trigger.current_command = SHOOT.trigger_motor.set.curr;
+    }
+    // Compiled send branch, NOT confirmation that the motor received a command.
+    next.output_enabled = (TRIGGER_MOTOR_TYPE == DJI_M2006);
+    next.mode = (float)SHOOT.mode;
+    next.fric_state = (float)SHOOT.state;
+    next.block_count = (float)SHOOT.block_time;
+    key = VofaPortLock();
+    shoot_observation = next;
+    shoot_observation_time = HAL_GetTick();
+    shoot_observation_ready = 1;
+    VofaPortUnlock(key);
+}
+
+void ShootReadObservation(ShootObservation *out)
+{
+    uint32_t key = VofaPortLock();
+    if (shoot_observation_ready && HAL_GetTick() - shoot_observation_time <= VOFA_OBSERVATION_MAX_AGE_MS)
+        *out = shoot_observation;
+    else
+        memset(out, 0xff, sizeof(*out));
+    VofaPortUnlock(key);
+}
+#endif
+
 void ShootSendCmd(void) 
 {
   if (TRIGGER_MOTOR_TYPE == DJI_M2006)
@@ -525,6 +577,9 @@ void ShootSendCmd(void)
   
   //   CanCmdDjiMotor(FRIC_MOTOR_R_CAN, STD_ID ,0 ,SHOOT.fric_motor[1].set.curr,SHOOT.fric_motor[0].set.curr, 0);
   // }
+#if VOFA_ENABLE
+  ShootPublishObservation(); // Read-only publication after this control iteration.
+#endif
 }
 
 #endif  // SHOOT_TYPE == SHOOT_FRIC

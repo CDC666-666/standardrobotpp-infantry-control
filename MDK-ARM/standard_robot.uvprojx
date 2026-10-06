@@ -357,16 +357,16 @@
             </VariousControls>
           </Aads>
           <LDads>
-            <umfTarg>1</umfTarg>
+            <umfTarg>0</umfTarg>
             <Ropi>0</Ropi>
             <Rwpi>0</Rwpi>
             <noStLib>0</noStLib>
             <RepFail>1</RepFail>
-            <useFile>0</useFile>
+            <useFile>1</useFile>
             <TextAddressRange>0x08000000</TextAddressRange>
             <DataAddressRange>0x20000000</DataAddressRange>
             <pXoBase></pXoBase>
-            <ScatterFile></ScatterFile>
+            <ScatterFile>.\vofa.sct</ScatterFile>
             <IncludeLibs></IncludeLibs>
             <IncludeLibsPath></IncludeLibsPath>
             <Misc></Misc>
@@ -3350,6 +3350,16 @@
               <FileName>communication.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\application\communication\communication.c</FilePath>
+            </File>
+            <File>
+              <FileName>vofa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\communication\vofa.c</FilePath>
+            </File>
+            <File>
+              <FileName>vofa_stm32.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\communication\vofa_stm32.c</FilePath>
             </File>
             <File>
               <FileName>usb_task.c</FileName>
