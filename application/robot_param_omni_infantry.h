@@ -170,30 +170,42 @@
 
 //PID参数 ---------------------
 //偏航角度
-#define KP_GIMBAL_YAW_ANGLE      (12.0f)
+#define KP_GIMBAL_YAW_ANGLE      (8.0f)
 #define KI_GIMBAL_YAW_ANGLE      (0.0f)
 #define KD_GIMBAL_YAW_ANGLE      (0.0f)
 #define MAX_IOUT_GIMBAL_YAW_ANGLE (0.0f)
 #define MAX_OUT_GIMBAL_YAW_ANGLE (60.0f)
-#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (1.0f)
-#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)// 
-//VELOCITY:角速度
-#define KP_GIMBAL_YAW_VELOCITY   (3000.0f)
-#define KI_GIMBAL_YAW_VELOCITY   (0.10f)
-#define KD_GIMBAL_YAW_VELOCITY   (40.0f)
-#define MAX_IOUT_GIMBAL_YAW_VELOCITY (7000.0f)
-#define MAX_OUT_GIMBAL_YAW_VELOCITY (3000.0f)
+#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (2.0f)
+#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)
+#define GIMBAL_DIRECT_YAW_PLAN_VEL_FF_GAIN (1.0f)
+#define MAX_GIMBAL_DIRECT_YAW_PLAN_VEL_FF (1.5f)  // 速度前馈分量限幅 ±1.5 rad/s
+#define GIMBAL_DIRECT_YAW_PLAN_ACC_FF_GAIN (0.004f) // 试验值：N*m/(rad/s^2)，等效惯量待辨识
+#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF (0.20f)  // 加速度前馈限幅，N*m
+#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC (50.0f)     // 与上位机 MPC yaw 加速度约束同量级，rad/s^2
+#define GIMBAL_DIRECT_YAW_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
+#define GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN (1.0f)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF (0.5f) // pitch 速度前馈限幅，rad/s
+#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN (3.0f) // 试验初值：GM6020 CAN 电流指令单位/(rad/s^2)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF (300.0f) // 加速度前馈电流指令限幅，raw
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC (100.0f) // 与上位机 MPC pitch 加速度约束同量级，rad/s^2
+#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
+//角速度
+#define KP_GIMBAL_YAW_VELOCITY   (1.25f)
+#define KI_GIMBAL_YAW_VELOCITY   (0.0f)
+#define KD_GIMBAL_YAW_VELOCITY   (0.00f)
+#define MAX_IOUT_GIMBAL_YAW_VELOCITY (1.0f)
+#define MAX_OUT_GIMBAL_YAW_VELOCITY (7.0f)   // yaw 速度环输出力矩上限，N*m；首次力矩测试限幅
 
 //俯仰角度
-#define KP_GIMBAL_PITCH_ANGLE (12.0f)  //4.5
+#define KP_GIMBAL_PITCH_ANGLE (28.0f)  //4.5
 #define KI_GIMBAL_PITCH_ANGLE (0.0f)
 #define KD_GIMBAL_PITCH_ANGLE (2.0f)  //3.0
 #define MAX_IOUT_GIMBAL_PITCH_ANGLE (1.0f)
 #define MAX_OUT_GIMBAL_PITCH_ANGLE (15.0f)
 //角速度
-#define KP_GIMBAL_PITCH_VELOCITY (3500.0f)  //1200
-#define KI_GIMBAL_PITCH_VELOCITY (30.0f)
-#define KD_GIMBAL_PITCH_VELOCITY (50.0f)
+#define KP_GIMBAL_PITCH_VELOCITY (2800.0f)  //1200
+#define KI_GIMBAL_PITCH_VELOCITY (0.0f)
+#define KD_GIMBAL_PITCH_VELOCITY (30.0f)
 #define MAX_IOUT_GIMBAL_PITCH_VELOCITY (10000.0f)
 #define MAX_OUT_GIMBAL_PITCH_VELOCITY (30000.0f)
 
