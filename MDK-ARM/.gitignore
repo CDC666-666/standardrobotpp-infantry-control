@@ -1,0 +1,20 @@
+# dot files
+/.vscode/launch.json
+/.settings
+/.eide/log
+/.eide.usr.ctx.json
+
+# project out
+/build
+/bin
+/obj
+/out
+
+# Hand-maintained DMA placement; the root otherwise ignores generated *.sct.
+!vofa.sct
+# Local verification log (build output, not source).
+/vofa-build.log
+
+# eide template
+*.ept
+*.eide-template
