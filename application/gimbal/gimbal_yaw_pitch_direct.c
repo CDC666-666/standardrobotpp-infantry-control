@@ -422,41 +422,39 @@ void GimbalReference(void)
  */
 void GimbalConsole(void) 
 {
-  // Match the first-cycle position hold: do not apply trajectory feedforward on entry.
+  // 与 GimbalReference() 的切入首周期位置保持一致：这一周期不叠加规划前馈。
+  // 从下一控制周期起恢复前馈；此门控不限制后续位置目标的跳变。
   const bool allow_plan_feedforward =
       gimbal_direct.mode == GIMBAL_AUTO_AIM &&
       gimbal_direct.last_mode == GIMBAL_AUTO_AIM;
 
-  // pitch 规划速度在上位机世界 pitch 坐标中表达；固件参考取了 -plan.pitch，故前馈也取负。
+  // pitch 位置参考在固件中取负；速度、加速度前馈使用相同的方向映射。
+  // 加速度输入单位 rad/s²，经输入限幅和一阶滤波后换算为 GM6020 电流指令 raw。
   static fp32 plan_pitch_acc_filtered = 0.0f;
   fp32 pitch_acc_current_ff = 0.0f;
-  if (allow_plan_feedforward && !gimbal_direct.pitch.offline) {
-      fp32 plan_pitch_acc = fp32_constrain(
-          GetScCmdGimbalAcceleration(AX_PITCH),
-          -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC,
-          MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC);
-      if (plan_pitch_acc != plan_pitch_acc) {
+  if (allow_plan_feedforward && !gimbal_direct.pitch.offline) 
+  {
+      fp32 plan_pitch_acc = fp32_constrain(GetScCmdGimbalAcceleration(AX_PITCH),
+                                            -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC,
+                                            MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC);
+      if (plan_pitch_acc != plan_pitch_acc) 
+      {
           plan_pitch_acc = 0.0f;
           plan_pitch_acc_filtered = 0.0f;
       }
-      plan_pitch_acc_filtered += GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA *
-          (-plan_pitch_acc - plan_pitch_acc_filtered);
-      pitch_acc_current_ff = fp32_constrain(
-          GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN * plan_pitch_acc_filtered,
-          -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF,
-          MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF);
-  } else {
+      plan_pitch_acc_filtered += GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA * (-plan_pitch_acc - plan_pitch_acc_filtered);
+      pitch_acc_current_ff = fp32_constrain(GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN * plan_pitch_acc_filtered, 
+                                                                      -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF,
+                                                                      MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF);
+  } else 
+  {
       plan_pitch_acc_filtered = 0.0f;
   }
 
   if (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR)
   {
-
-    gimbal_direct.pitch.set.curr=0;
-    //gimbal_direct.pitch.set.pos = gimbal_direct.pitch.fdb.pos;  
-
+    gimbal_direct.pitch.set.curr=0; 
     gimbal_direct.yaw.set.vel = 0;
-
   } 
   else if(GIMBAL_DIRECT_PITCH_MOTOR_TYPE == DM_4310){
     //Pitch control
@@ -479,39 +477,40 @@ void GimbalConsole(void)
                 fp32_constrain(gimbal_direct.pitch.set.pos, pitch_pos_upper, pitch_pos_lower);
         }
     }
-    }else if(GIMBAL_DIRECT_PITCH_MOTOR_TYPE == DJI_M6020){
-      fp32 pitch_vel_cmd = PID_calc(
-          &gimbal_direct_pid.pitch_angle,
-          gimbal_direct.feedback_pos.pitch,
-          gimbal_direct.reference.pitch);
-      if (allow_plan_feedforward) {
-          fp32 plan_pitch_vel_ff = fp32_constrain(
-              GetScCmdGimbalVelocity(AX_PITCH),
-              -MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF,
-              MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF);
+    }else if(GIMBAL_DIRECT_PITCH_MOTOR_TYPE == DJI_M6020)
+    {
+      fp32 pitch_vel_cmd = PID_calc( &gimbal_direct_pid.pitch_angle, 
+                           gimbal_direct.feedback_pos.pitch, 
+                           gimbal_direct.reference.pitch);
+      if (allow_plan_feedforward) 
+      {
+          // pitch 速度前馈单位 rad/s；先单独限幅，再从角度环速度设定中减去。
+          fp32 plan_pitch_vel_ff = fp32_constrain( GetScCmdGimbalVelocity(AX_PITCH), 
+                                   -MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF, 
+                                   MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF);
           pitch_vel_cmd -= GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN * plan_pitch_vel_ff;
       }
-      gimbal_direct.pitch.set.vel = fp32_constrain(
-          pitch_vel_cmd,
-          -MAX_OUT_GIMBAL_PITCH_ANGLE,
-          MAX_OUT_GIMBAL_PITCH_ANGLE);
-      fp32 pitch_velocity_current = PID_calc(
-          &gimbal_direct_pid.pitch_velocity,
-          gimbal_direct.feedback_vel.pitch,
-          gimbal_direct.pitch.set.vel);
+      gimbal_direct.pitch.set.vel = fp32_constrain(pitch_vel_cmd,
+                                    -MAX_OUT_GIMBAL_PITCH_ANGLE,
+                                    MAX_OUT_GIMBAL_PITCH_ANGLE);
+      fp32 pitch_velocity_current = PID_calc(&gimbal_direct_pid.pitch_velocity,
+                                    gimbal_direct.feedback_vel.pitch,
+                                    gimbal_direct.pitch.set.vel);
+      // 速度环电流与加速度前馈相加后，仍受 pitch 总电流软件限幅约束。
       gimbal_direct.pitch.set.curr = gimbal_direct.pitch.direction * fp32_constrain(
-          pitch_velocity_current + pitch_acc_current_ff,
-          -MAX_OUT_GIMBAL_PITCH_VELOCITY,
-          MAX_OUT_GIMBAL_PITCH_VELOCITY);
+                                                                      pitch_velocity_current + pitch_acc_current_ff,
+                                                                      -MAX_OUT_GIMBAL_PITCH_VELOCITY,
+                                                                      MAX_OUT_GIMBAL_PITCH_VELOCITY);
     }
     //Yaw速度控制
     fp32 delta_yaw=loop_fp32_constrain(gimbal_direct.reference.yaw-gimbal_direct.feedback_pos.yaw,-M_PI,M_PI);
     fp32 yaw_vel_cmd = PID_calc(&gimbal_direct_pid.yaw_angle, 0, delta_yaw);
     yaw_vel_cmd -= GIMBAL_DIRECT_YAW_GYRO_DAMPING * gimbal_direct.feedback_vel.yaw;
     if (gimbal_direct.mode == GIMBAL_IMU || gimbal_direct.mode == GIMBAL_AUTO_AIM) {
+        // 底盘角速度补偿与上位机 MPC 轨迹前馈是两个独立项。
         yaw_vel_cmd += GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD * ChassisGetSpeedWz();
     }
-    // 上位机 plan_yaw_vel 是动态轨迹前馈；首轮限幅，且只在自瞄模式启用。
+    // yaw 规划速度单位 rad/s，与固件 yaw 正方向一致；单独限幅后加到速度设定。
     if (allow_plan_feedforward) {
         fp32 plan_yaw_vel_ff = fp32_constrain(
             GetScCmdGimbalVelocity(AX_YAW),
@@ -520,7 +519,8 @@ void GimbalConsole(void)
         yaw_vel_cmd += GIMBAL_DIRECT_YAW_PLAN_VEL_FF_GAIN * plan_yaw_vel_ff;
     }
 
-    // 上位机 plan_yaw_acc 只作小幅力矩前馈；惯量尚未实测，因此严格限幅并滤波。
+    // yaw 规划加速度单位 rad/s²：输入限幅→滤波→按试验系数换算为 N·m。
+    // 此项有独立力矩限幅；等效惯量尚未辨识，不应视为物理标定值。
     static fp32 plan_yaw_acc_filtered = 0.0f;
     fp32 yaw_acc_torque_ff = 0.0f;
     if (allow_plan_feedforward && !gimbal_direct.yaw.offline) {
@@ -560,6 +560,7 @@ void GimbalConsole(void)
             &gimbal_direct_pid.yaw_velocity,
             gimbal_direct.yaw.fdb.vel,
             gimbal_direct.yaw.set.vel);
+        // 速度环力矩与加速度前馈相加后，再统一限制总力矩。
         gimbal_direct.yaw.set.tor = fp32_constrain(
             yaw_velocity_torque + yaw_acc_torque_ff,
             -MAX_OUT_GIMBAL_YAW_VELOCITY,
