@@ -38,6 +38,10 @@ static Shoot_s SHOOT = {
   .heat_limit = 0,
 };
 
+#define SINGLE_SHOT_INTERVAL_MS 500U
+static uint32_t last_single_shot_time;
+static uint8_t single_shot_started;
+
 
 uint8_t fric_ui;
 fp32 delta;
@@ -175,21 +179,21 @@ void ShootSetMode(void)
     else if (switch_is_down(SHOOT.rc->rc.s[0]))
     {
       //清弹
-        SHOOT.state = FRIC_READY;
-        SHOOT.mode = LOAD_BURSTFIRE;
-        SHOOT.fric_flag = 1;
+        // SHOOT.state = FRIC_READY;
+        // SHOOT.mode = LAOD_BULLET;
+        // SHOOT.fric_flag = 1;
 
       //上位机测试
-        // SHOOT.state = FRIC_READY;
+        SHOOT.state = FRIC_READY;
 
-        // if (GetScCmdFire())
-        // {
-        //   SHOOT.mode = LOAD_BURSTFIRE;
-        // }
-        // else
-        // {
-        //   SHOOT.mode = LOAD_STOP;
-        // }
+        if (GetScCmdFire())
+        {
+          SHOOT.mode = LOAD_BURSTFIRE;
+        }
+        else
+        {
+          SHOOT.mode = LOAD_STOP;
+        }
     }
 
     //过热保护
@@ -238,7 +242,7 @@ void ShootSetMode(void)
     }
 
     //防堵转
-    if (SHOOT.mode == LOAD_BURSTFIRE||SHOOT.mode == LAOD_BULLET)
+    if (SHOOT.mode == LOAD_BURSTFIRE || (SHOOT.mode == LAOD_BULLET && SHOOT.move_flag))
     {
         if(SHOOT.block_time >= BLOCK_TIME)
         {
@@ -260,6 +264,11 @@ void ShootSetMode(void)
             SHOOT.block_time = 0;
         }  
     }    
+    else
+    {
+        SHOOT.block_time = 0;
+        SHOOT.reverse_time = 0;
+    }
 }
 
 /*-------------------- Observe --------------------*/
@@ -393,21 +402,23 @@ void ShootReference(void)
   {
   case LOAD_STOP:
   SHOOT.REF.trigger_speed_ref=0.0f;
+  SHOOT.move_flag = 0;
   break;
   
   case LAOD_BULLET:
   if (TRIGGER_MOTOR_TYPE == DJI_M2006)
   {
-    if (SHOOT.move_flag == 0)
+    if (!SHOOT.move_flag &&
+        (!single_shot_started || HAL_GetTick() - last_single_shot_time >= SINGLE_SHOT_INTERVAL_MS))
     {
       SHOOT.REF.trigger_angel_ref = theta_format(SHOOT.FDB.trigger_angel_fdb + 2*PI/BULLET_NUM/TRIGGER_REDUCTION_RATIO);
-    }
-
-    if (theta_format(SHOOT.REF.trigger_angel_ref - SHOOT.FDB.trigger_angel_fdb) > 0.01f)
-    {
+      last_single_shot_time = HAL_GetTick();
+      single_shot_started = 1;
       SHOOT.move_flag = 1;
     }
-    else
+
+    if (SHOOT.move_flag &&
+        fabsf(theta_format(SHOOT.REF.trigger_angel_ref - SHOOT.FDB.trigger_angel_fdb)) <= 0.01f)
     {
       SHOOT.move_flag = 0;
     }
@@ -569,7 +580,7 @@ void ShootSendCmd(void)
   }
   // else if (TRIGGER_MOTOR_TYPE == DM_4310)
   // {
-  //   if (SHOOT.trigger_motor.fdb.state == DM_STATE_DISABLE) 
+  //   if (SHOOT.trigger_motor.fdb.state == DM_STATE_DISABLE)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
   //   {
   //     DmEnable(&SHOOT.trigger_motor);
   //   }

@@ -213,7 +213,7 @@
 /*-------------------- 发射机构 --------------------*/
 //物理参数 ---------------------
 #define FRIC_RADIUS 0.03f              // (m)摩擦轮半径
-#define BULLET_NUM 8                   // 定义拨弹盘容纳弹丸个数
+#define BULLET_NUM 7.5                   // 定义拨弹盘容纳弹丸个数
 #define GUN_NUM 1                      // 定义枪管个数（一个枪管2个摩擦轮）
 #define TRIGGER_REDUCTION_RATIO 1.0f   // 定义英雄电机到拨弹盘的齿轮减速比
 
@@ -236,10 +236,10 @@
 //电机标准帧标识符
 #define STD_ID 0x200
 //单环拨弹速度
-#define TRIGGER_SPEED               (575.0f)
+#define TRIGGER_SPEED               (696.0f)
 //摩擦轮速度
-#define FRIC_R_SPEED                  (-686.0f)
-#define FRIC_L_SPEED                  (686.0f)
+#define FRIC_R_SPEED                  (-613.0f)
+#define FRIC_L_SPEED                  (613.0f)
 #define FRIC_SPEED_LIMIT            (550.0f) 
 
 /*编码器参数------------*/
@@ -263,12 +263,13 @@
 
 /*MIT模式参数 ---------------------*/
 
-#define TRIGGER_SPEED_MIT_KD (0.0f)  //  (none)
+// #define TRIGGER_SPEED_MIT_KD (0.0f)  //  （无）
+#define TRIGGER_SPEED_MIT_KD (2.0f)
 
 /*PID参数 ---------------------*/
 
 //拨弹轮电机PID速度环
-#define TRIGGER_SPEED_PID_KP (250.0f)
+#define TRIGGER_SPEED_PID_KP (200.0f)
 #define TRIGGER_SPEED_PID_KI (0.0f)
 #define TRIGGER_SPEED_PID_KD (1.2f)
 
@@ -276,15 +277,17 @@
 #define TRIGGER_SPEED_PID_MAX_IOUT (600.0f)
 
 //拨弹轮电机PID角度环
-#define TRIGGER_ANGEL_PID_KP (340.0f)
+#define TRIGGER_ANGEL_PID_KP (120.0f)
 #define TRIGGER_ANGEL_PID_KI (0.0f)
-#define TRIGGER_ANGEL_PID_KD (0.05f)
+#define TRIGGER_ANGEL_PID_KD (0.95f)
 
-#define TRIGGER_ANGEL_PID_MAX_OUT (800.0f)
+// #define TRIGGER_ANGEL_PID_MAX_OUT (800.0f)
+// #define TRIGGER_ANGEL_PID_MAX_OUT (10.0f)
+#define TRIGGER_ANGEL_PID_MAX_OUT (40.0f)
 #define TRIGGER_ANGEL_PID_MAX_IOUT (300.0f)
 
 //摩擦轮电机PID
-#define FRIC_SPEED_PID_KP (651.0f)
+#define FRIC_SPEED_PID_KP (70.0f)
 #define FIRC_SPEED_PID_KI (0.00f)
 #define FRIC_SPEED_PID_KD (4.3f)
 
