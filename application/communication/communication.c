@@ -357,9 +357,18 @@ void Uart2TaskLoop(void)
     VofaService();
     ShootReadObservation(&shoot_obs);
     ChassisReadObservation(&chassis_obs);
+	
 
 #if CHASSIS_TYPE == CHASSIS_OMNI_WHEEL
-    VOFA_SEND(gimbal_direct.yaw.fdb.pos);  
+    VOFA_SEND((float)gimbal_direct.mode,
+          gimbal_direct.yaw.set.vel,
+          gimbal_direct.yaw.fdb.vel,
+          gimbal_direct.yaw.set.tor,
+          gimbal_direct.feedback_vel.yaw,
+            gimbal_direct.reference.yaw,    // I5：下位机 yaw 位置目标
+            gimbal_direct.feedback_pos.yaw, // I6：IMU yaw 位置反馈
+            chassis_obs.wz_fdb              // I7：轮速估计的底盘角速度);  
+    );
 #else
     // No omni chassis in this build: select supported fields above instead.
 #endif

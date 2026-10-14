@@ -1,4 +1,4 @@
-; Shared Keil/EIDE scatter file. Reserve the DMA section in ordinary SRAM.
+; Shared Keil/EIDE scatter file. Keep all runtime data in DMA-accessible SRAM.
 LR_IROM1 0x08000000 0x00100000 {
   ER_IROM1 0x08000000 0x00100000 {
     *.o (RESET, +First)
@@ -8,9 +8,6 @@ LR_IROM1 0x08000000 0x00100000 {
   }
   RW_IRAM1 0x20000000 0x00020000 {
     *.o (VOFA_DMA)
-    .ANY (+RW +ZI)
-  }
-  RW_IRAM2 0x10000000 0x00010000 {
     .ANY (+RW +ZI)
   }
 }

@@ -170,7 +170,7 @@
 
 //PID参数 ---------------------
 //偏航角度
-#define KP_GIMBAL_YAW_ANGLE      (8.0f)
+#define KP_GIMBAL_YAW_ANGLE      (10.0f)
 #define KI_GIMBAL_YAW_ANGLE      (0.0f)
 #define KD_GIMBAL_YAW_ANGLE      (0.0f)
 #define MAX_IOUT_GIMBAL_YAW_ANGLE (0.0f)
@@ -180,13 +180,14 @@
 #define GIMBAL_DIRECT_YAW_PLAN_VEL_FF_GAIN (1.0f)
 #define MAX_GIMBAL_DIRECT_YAW_PLAN_VEL_FF (1.5f)  // 速度前馈分量限幅 ±1.5 rad/s
 #define GIMBAL_DIRECT_YAW_PLAN_ACC_FF_GAIN (0.004f) // 试验值：N*m/(rad/s^2)，等效惯量待辨识
-#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF (0.20f)  // 加速度前馈限幅，N*m
+#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF (0.40f)  // 加速度前馈限幅，N*m
 #define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC (50.0f)     // 与上位机 MPC yaw 加速度约束同量级，rad/s^2
 #define GIMBAL_DIRECT_YAW_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
-#define GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN (1.0f)
-#define MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF (0.5f) // pitch 速度前馈限幅，rad/s
-#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN (3.0f) // 试验初值：GM6020 CAN 电流指令单位/(rad/s^2)
-#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF (300.0f) // 加速度前馈电流指令限幅，raw
+
+#define GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN (2.0f)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF (2.0f) //  pitch 速度前馈限幅，rad/s
+#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN (6.0f) // 试验初值：GM6020 CAN 电流指令单位/(rad/s^2)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF (6000.0f) // 加速度前馈电流指令限幅，raw
 #define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC (100.0f) // 与上位机 MPC pitch 加速度约束同量级，rad/s^2
 #define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
 //角速度
@@ -197,7 +198,7 @@
 #define MAX_OUT_GIMBAL_YAW_VELOCITY (7.0f)   // yaw 速度环输出力矩上限，N*m；首次力矩测试限幅
 
 //俯仰角度
-#define KP_GIMBAL_PITCH_ANGLE (28.0f)  //4.5
+#define KP_GIMBAL_PITCH_ANGLE (70.0f)  //4.5
 #define KI_GIMBAL_PITCH_ANGLE (0.0f)
 #define KD_GIMBAL_PITCH_ANGLE (2.0f)  //3.0
 #define MAX_IOUT_GIMBAL_PITCH_ANGLE (1.0f)
@@ -235,7 +236,7 @@
 //电机标准帧标识符
 #define STD_ID 0x200
 //单环拨弹速度
-#define TRIGGER_SPEED               (150.0f)
+#define TRIGGER_SPEED               (696.0f)
 //摩擦轮速度
 #define FRIC_R_SPEED                  (-613.0f)
 #define FRIC_L_SPEED                  (613.0f)
