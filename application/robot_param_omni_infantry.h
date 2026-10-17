@@ -174,28 +174,41 @@
 #define KI_GIMBAL_YAW_ANGLE      (0.0f)
 #define KD_GIMBAL_YAW_ANGLE      (0.0f)
 #define MAX_IOUT_GIMBAL_YAW_ANGLE (0.0f)
-#define MAX_OUT_GIMBAL_YAW_ANGLE (60.0f)
-#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (2.0f)
-#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)
-#define GIMBAL_DIRECT_YAW_PLAN_VEL_FF_GAIN (1.0f)
-#define MAX_GIMBAL_DIRECT_YAW_PLAN_VEL_FF (1.5f)  // 速度前馈分量限幅 ±1.5 rad/s
-#define GIMBAL_DIRECT_YAW_PLAN_ACC_FF_GAIN (0.004f) // 试验值：N*m/(rad/s^2)，等效惯量待辨识
-#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC_FF (0.40f)  // 加速度前馈限幅，N*m
-#define MAX_GIMBAL_DIRECT_YAW_PLAN_ACC (50.0f)     // 与上位机 MPC yaw 加速度约束同量级，rad/s^2
-#define GIMBAL_DIRECT_YAW_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
+#define MAX_OUT_GIMBAL_YAW_ANGLE (20.0f)//达妙4310 v1.1最大转速rad/s
 
-#define GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN (2.0f)
-#define MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF (2.0f) //  pitch 速度前馈限幅，rad/s
-#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN (6.0f) // 试验初值：GM6020 CAN 电流指令单位/(rad/s^2)
-#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF (6000.0f) // 加速度前馈电流指令限幅，raw
-#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC (100.0f) // 与上位机 MPC pitch 加速度约束同量级，rad/s^2
-#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
 //角速度
 #define KP_GIMBAL_YAW_VELOCITY   (1.25f)
 #define KI_GIMBAL_YAW_VELOCITY   (0.0f)
 #define KD_GIMBAL_YAW_VELOCITY   (0.00f)
 #define MAX_IOUT_GIMBAL_YAW_VELOCITY (1.0f)
 #define MAX_OUT_GIMBAL_YAW_VELOCITY (7.0f)   // yaw 速度环输出力矩上限，N*m；首次力矩测试限幅
+
+#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (2.0f)
+#define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)
+
+// pitch 仍沿用原自瞄位置/速度 PID 和规划前馈。
+#define GIMBAL_DIRECT_PITCH_PLAN_VEL_FF_GAIN (2.0f)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF (2.0f) //  pitch 速度前馈限幅，rad/s
+#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FF_GAIN (6.0f) // 试验初值：GM6020 CAN 电流指令单位/(rad/s^2)
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC_FF (6000.0f) // 加速度前馈电流指令限幅，raw
+#define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC (100.0f) // 与上位机 MPC pitch 加速度约束同量级，rad/s^2
+#define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
+
+// 新自瞄 yaw 控制器专用参数；数值是接入初值，尚未做本车模型辨识或 LQR 整定。
+// J 和反馈增益沿用接入前的试验量级，但不再引用旧 PID/前馈宏。
+#define GIMBAL_AUTO_YAW_J_KG_M2 (0.004f)// MATLAB 调参脚本给出
+#define GIMBAL_AUTO_YAW_B_NMS_RAD (0.0f)// MATLAB 调参脚本给出
+#define GIMBAL_AUTO_YAW_K_THETA (12.5f)// MATLAB 调参脚本给出
+#define GIMBAL_AUTO_YAW_K_OMEGA (1.5625f)
+#define GIMBAL_AUTO_YAW_ESO_BANDWIDTH_RAD_S (20.0f)
+// 模型及 DM 实际力矩尚未辨识；先运行 ESO 观测，暂不把估计扰动施加到电机。
+#define GIMBAL_AUTO_YAW_ESO_COMP_ENABLE (0U)
+#define GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM (7.0f)
+#define GIMBAL_AUTO_YAW_TORQUE_SLEW_NM_S (1000.0f)
+#define GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF (2.5f)
+// 仅拒绝明显异常的有限 USB 参考；有效参考不再作旧前馈限幅/滤波。
+#define GIMBAL_AUTO_YAW_REF_VEL_VALID_MAX_RAD_S (20.0f)
+#define GIMBAL_AUTO_YAW_REF_ACC_VALID_MAX_RAD_S2 (100.0f)
 
 //俯仰角度
 #define KP_GIMBAL_PITCH_ANGLE (70.0f)  //4.5
