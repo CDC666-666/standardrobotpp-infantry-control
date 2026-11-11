@@ -161,12 +161,12 @@
 #define GIMBAL_DIRECT_PITCH_MODE (0)
 
 //物理参数 ---------------------
-#define GIMBAL_UPPER_LIMIT_PITCH (0.65f)
+#define GIMBAL_UPPER_LIMIT_PITCH (0.25f)
 #define GIMBAL_LOWER_LIMIT_PITCH (-0.3f)
 
 //电机角度中值设置
-#define GIMBAL_DIRECT_PITCH_MID (1.21874785f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
-#define GIMBAL_DIRECT_YAW_MID   (-0.734150f)    //云台初始化正对齐的时候使用的偏航轴正中心量
+#define GIMBAL_DIRECT_PITCH_MID (-2.99279666f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
+#define GIMBAL_DIRECT_YAW_MID   (-3.23662949f)    //云台初始化正对齐的时候使用的偏航轴正中心量
 
 //PID参数 ---------------------
 //偏航角度
@@ -195,11 +195,11 @@
 #define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
 
 // 新自瞄 yaw 控制器专用参数；数值是接入初值，尚未做本车模型辨识或 LQR 整定。
-// J 和反馈增益沿用接入前的试验量级，但不再引用旧 PID/前馈宏。
-#define GIMBAL_AUTO_YAW_J_KG_M2 (0.004f)// MATLAB 调参脚本给出
-#define GIMBAL_AUTO_YAW_B_NMS_RAD (0.0f)// MATLAB 调参脚本给出
-#define GIMBAL_AUTO_YAW_K_THETA (12.5f)// MATLAB 调参脚本给出
-#define GIMBAL_AUTO_YAW_K_OMEGA (1.5625f)
+// J/B 与反馈增益当前取开源脚本所列值；是否适合本车仍待辨识与整定。
+#define GIMBAL_AUTO_YAW_J_KG_M2 (0.039f)// MATLAB 调参脚本给出
+#define GIMBAL_AUTO_YAW_B_NMS_RAD (0.3f)// MATLAB 调参脚本给出
+#define GIMBAL_AUTO_YAW_K_THETA (12.0f)// 开源脚本标注的固件当前角度反馈增益
+#define GIMBAL_AUTO_YAW_K_OMEGA (3.4f)// 开源脚本标注的固件当前速度反馈增益
 #define GIMBAL_AUTO_YAW_ESO_BANDWIDTH_RAD_S (20.0f)
 // 模型及 DM 实际力矩尚未辨识；先运行 ESO 观测，暂不把估计扰动施加到电机。
 #define GIMBAL_AUTO_YAW_ESO_COMP_ENABLE (0U)
