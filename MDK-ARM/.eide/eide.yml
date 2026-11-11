@@ -188,6 +188,7 @@ virtualFolder:
         - path: ../application/gimbal/gimbal.c
         - path: ../application/gimbal/gimbal_task.c
         - path: ../application/gimbal/gimbal_yaw_pitch_direct.c
+        - path: ../application/gimbal/yaw_auto_lqr_eso_controller.c
         - path: ../application/gimbal/gimbal_virtual.c
       folders: []
     - name: IMU

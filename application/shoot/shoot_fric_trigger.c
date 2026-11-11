@@ -230,7 +230,7 @@ void ShootSetMode(void)
         SHOOT.block_time = 0;
         SHOOT.reverse_time = 0;
     }
-    // keep down-switch burst fire enabled
+    // 下档拨弹盘连续转动仍受安全档保护
     
     //遥控器离线保护
     if ( toe_is_error(DBUS_TOE) )
