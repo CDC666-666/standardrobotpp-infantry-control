@@ -3468,6 +3468,11 @@
               <FilePath>..\application\gimbal\gimbal_yaw_pitch_direct.c</FilePath>
             </File>
             <File>
+              <FileName>yaw_auto_lqr_eso_controller.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\gimbal\yaw_auto_lqr_eso_controller.c</FilePath>
+            </File>
+            <File>
               <FileName>gimbal_virtual.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\application\gimbal\gimbal_virtual.c</FilePath>
