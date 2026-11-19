@@ -27,13 +27,12 @@
 #include "detect_task.h"
 #include "fifo.h"
 #include "gimbal.h"
-#include "gimbal_yaw_pitch_direct.h"
 #include "robot_param.h"
 #include "signal_generator.h"
 #include "uart2_typedef.h"
 #include "usb_debug.h"
 #include "vofa.h"
-#include "vofa_observe.h"
+#include "vofa_telemetry.h"
 
 /*******************************************************************************/
 /* Macro Definitions                                                           */
@@ -43,12 +42,6 @@
 
 #define USART_RX_BUF_LENGHT 512
 #define USART1_FIFO_BUF_LENGTH 1024
-
-#if VOFA_ENABLE
-// Read-only snapshots; edit only VOFA_SEND below to choose plotted channels.
-static ShootObservation shoot_obs;
-static ChassisObservation chassis_obs;
-#endif
 
 /**
  * @brief 数据包初始化宏定义
@@ -354,15 +347,7 @@ void Uart2TaskLoop(void)
     LAST_TASK_TIME = now;
 
 #if VOFA_ENABLE
-    VofaService();
-    ShootReadObservation(&shoot_obs);
-    ChassisReadObservation(&chassis_obs);
-
-#if CHASSIS_TYPE == CHASSIS_OMNI_WHEEL
-    VOFA_SEND(gimbal_direct.yaw.fdb.pos);  
-#else
-    // No omni chassis in this build: select supported fields above instead.
-#endif
+    vofa_telemetry_update(now);
 #else
 
 #if __SELF_BOARD_ID == C_BOARD_BALANCE_CHASSIS
