@@ -248,9 +248,12 @@ virtualFolder:
         - path: ../application/referee/jlui.h
       folders: []
     - name: remote_control
-      files:
-        - path: ../application/remote_control/ps2_task.c
-      folders: []
+      files: []
+      folders:
+        - name: ps2
+          files:
+            - path: ../application/remote_control/ps2/ps2_task.c
+          folders: []
     - name: robot_cmd
       files:
         - path: ../application/robot_cmd/CAN_receive.c
@@ -317,6 +320,7 @@ targets:
         - ../application/other
         - ../application/referee
         - ../application/remote_control
+        - ../application/remote_control/ps2
         - ../application/robot_cmd
         - ../application/shoot
         - ../application/IMU
