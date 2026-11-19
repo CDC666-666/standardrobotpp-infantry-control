@@ -25,6 +25,7 @@
 #include "gimbal_yaw_pitch_direct.h"
 #include "chassis.h"
 #include "yaw_auto_lqr_eso_controller.h"
+#include "vofa_gimbal.h"
 #include <float.h>
 #if (GIMBAL_TYPE == GIMBAL_YAW_PITCH_DIRECT)
 Gimbal_s gimbal_direct;
@@ -64,6 +65,10 @@ static bool yaw_auto_feedback_valid = false;       // 当前周期 yaw 反馈及
 static fp32 yaw_auto_theta_unwrapped = 0.0f;       // 解包后的连续 IMU yaw 角，rad，供 ESO 使用。
 static fp32 yaw_auto_theta_last = 0.0f;            // 上一周期的折返 IMU yaw 角，rad。
 static TickType_t yaw_auto_last_tick = 0;          // 上次有效计算的 RTOS tick，用于估计控制周期。
+
+#if VOFA_ENABLE
+static float yaw_mode_usb_offline, yaw_mode_vision_request;
+#endif
 
 /**
  * @brief 检查 yaw 控制输入或输出是否为有限浮点数。
@@ -398,6 +403,13 @@ void GimbalInit(void)
  */
 void GimbalSetMode(void)
 {
+  uint8_t usb_offline = GetUsbStatus();
+  bool vision_request = GetScCmdFricOn();
+#if VOFA_ENABLE
+  // 将本拍实际模式选择输入同步到观测快照。
+  yaw_mode_usb_offline = (float)(usb_offline != 0U);
+  yaw_mode_vision_request = (float)vision_request;
+#endif
   if ( toe_is_error(DBUS_TOE) ){
     gimbal_direct.mode=GIMBAL_DBUS_ERR;
   }
@@ -423,7 +435,7 @@ void GimbalSetMode(void)
   else if (switch_is_down(gimbal_direct.rc->rc.s[0]) || switch_is_mid(gimbal_direct.rc->rc.s[0])){{
       gimbal_direct.mode=GIMBAL_IMU;
     }
-    if (!GetUsbStatus() && GetScCmdFricOn()){
+    if (!usb_offline && vision_request){
           gimbal_direct.mode = GIMBAL_AUTO_AIM;
    }    
   }
@@ -595,6 +607,7 @@ void GimbalConsole(void)
  */
 void GimbalSendCmd(void) 
 {
+    bool yaw_stop;
     // if (gimbal_direct.pitch.fdb.state == DM_STATE_DISABLE) {
     //     DmEnable(&gimbal_direct.pitch);
     // }
@@ -602,9 +615,10 @@ void GimbalSendCmd(void)
         DmEnable(&gimbal_direct.yaw);
     }
 
-    if (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR ||
+    yaw_stop = (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR ||
         gimbal_direct.yaw.offline ||
-        (gimbal_direct.mode == GIMBAL_AUTO_AIM && !yaw_auto_feedback_valid)) {
+        (gimbal_direct.mode == GIMBAL_AUTO_AIM && !yaw_auto_feedback_valid));
+    if (yaw_stop) {
         DmMitStop(&gimbal_direct.yaw);
         //DmMitStop(&gimbal_direct.pitch);
     } else {
@@ -612,6 +626,11 @@ void GimbalSendCmd(void)
     }
 
   CanCmdDjiMotor(GIMBAL_CAN,GIMBAL_STDID,0,0,gimbal_direct.pitch.set.curr,0);
+#if VOFA_ENABLE
+  vofa_gimbal_update(&gimbal_direct, yaw_stop ? 0.0f : gimbal_direct.yaw.set.tor,
+      yaw_auto_feedback_valid, yaw_auto_output.theta_ref_rad, yaw_auto_theta_unwrapped,
+      yaw_mode_usb_offline, yaw_mode_vision_request);
+#endif
 }
 
 

@@ -37,6 +37,15 @@ typedef struct {
     float wz_fdb; // chassis.P_wz, rad/s, wheel-derived estimate
 } ChassisObservation;
 
+typedef struct {
+    float time_ms, mode;
+    float theta_ref_rad, theta_rad; // Same angle basis as the active controller.
+    float omega_imu_rad_s, omega_motor_rad_s;
+    float tau_cmd_nm, tau_meas_nm; // Controller-positive direction; command is not a receipt ACK.
+    float theta_motor_rad, pitch_imu_rad; // Direction-mapped DM position (no re-zeroing) and IMU pitch, rad.
+    float usb_offline, vision_request; // 0/1 inputs captured when selecting this cycle's mode.
+} GimbalYawObservation;
+
 static inline float VofaUnavailable(void)
 {
     const uint32_t bits = 0x7fc00000UL;
@@ -58,6 +67,11 @@ static inline void ShootReadObservation(ShootObservation *out) { memset(out, 0xf
 void ChassisReadObservation(ChassisObservation *out);
 #else
 static inline void ChassisReadObservation(ChassisObservation *out) { memset(out, 0xff, sizeof(*out)); }
+#endif
+#if VOFA_ENABLE && GIMBAL_TYPE == GIMBAL_YAW_PITCH_DIRECT
+void GimbalReadYawObservation(GimbalYawObservation *out);
+#else
+static inline void GimbalReadYawObservation(GimbalYawObservation *out) { memset(out, 0xff, sizeof(*out)); }
 #endif
 
 #endif
