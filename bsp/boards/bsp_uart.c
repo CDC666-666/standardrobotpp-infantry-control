@@ -16,7 +16,7 @@
 UartSendState_e UartSendTxMessage(
     UART_HandleTypeDef * huart, uint8_t * pData, uint16_t Size, uint32_t Timeout)
 {
-#if VOFA_ENABLE
+#if UART2_ROLE != UART2_ROLE_LEGACY
     if (huart->Instance == USART1) return UART_SEND_FAIL;
 #endif
     uint8_t cnt = 5;  //最大重发次数

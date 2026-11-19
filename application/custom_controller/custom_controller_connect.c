@@ -24,7 +24,7 @@
 
 /*-------------------- Send --------------------*/
 
-#if !VOFA_ENABLE
+#if UART2_ROLE == UART2_ROLE_LEGACY
 static Controller_t TX_DATA;  // 自定义控制器发送的数据
 
 /**
@@ -56,8 +56,8 @@ static void DataConcatenat(uint8_t * data, uint16_t data_lenth)
  */
 void SendDataToPC(uint8_t * data)
 {
-#if VOFA_ENABLE
-    (void)data; // USART1 has a single owner in VOFA mode.
+#if UART2_ROLE != UART2_ROLE_LEGACY
+    (void)data; // VOFA 或 VT13 独占串口，禁止自定义控制器另行发送。
 #else
     DataConcatenat(data, DATA_LENGTH);
     HAL_UART_Transmit(&huart1, (uint8_t *)(&TX_DATA), sizeof(TX_DATA), 50);

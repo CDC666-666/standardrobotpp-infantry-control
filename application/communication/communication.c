@@ -33,6 +33,7 @@
 #include "usb_debug.h"
 #include "vofa.h"
 #include "vofa_telemetry.h"
+#include "vt13_remote.h"
 
 /*******************************************************************************/
 /* Macro Definitions                                                           */
@@ -132,6 +133,8 @@ void Usart1Init(void)
 {
 #if VOFA_ENABLE
     VofaInit();
+#elif VT13_ENABLE
+    Vt13UartInit();
 #else
     fifo_s_init(&usart1_fifo, usart1_fifo_buf, USART1_FIFO_BUF_LENGTH);
     usart1_init(usart1_buf[0], usart1_buf[1], USART_RX_BUF_LENGHT);
@@ -146,6 +149,8 @@ void USART1_IRQHandler(void)
 #if VOFA_ENABLE
     // Normal-mode DMA needs UART TC handling to finish the HAL TX lifecycle.
     HAL_UART_IRQHandler(&huart1);
+#elif VT13_ENABLE
+    Vt13UartIrq();
 #else
     static volatile uint8_t res;
     if (USART1->SR & UART_FLAG_IDLE) {
@@ -348,6 +353,9 @@ void Uart2TaskLoop(void)
 
 #if VOFA_ENABLE
     vofa_telemetry_update(now);
+#elif VT13_ENABLE
+    // 仅维护原始图传输入与串口恢复，不发送旧板间帧，不修改车辆控制。
+    Vt13UartService();
 #else
 
 #if __SELF_BOARD_ID == C_BOARD_BALANCE_CHASSIS

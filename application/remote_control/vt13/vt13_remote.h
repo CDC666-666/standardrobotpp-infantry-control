@@ -38,4 +38,21 @@ void Vt13ParserInit(Vt13Parser *parser);
 void Vt13ParserInvalidate(Vt13Parser *parser);
 void Vt13ParserFeed(Vt13Parser *parser, const uint8_t *data, uint16_t length, uint32_t now_ms);
 void Vt13ParserRead(const Vt13Parser *parser, Vt13Input *out, uint32_t now_ms);
+
+typedef struct {
+    uint32_t uart_errors, last_error, start_failed, recoveries;
+    bool running;
+    uint32_t dma_stalls; /* 无错误回调时检测到的接收 DMA 停止次数。 */
+} Vt13UartStats;
+
+/* 此快照用于调试；业务读取输入请使用 Vt13ReadInput()。 */
+extern volatile Vt13UartStats vt13_uart_stats;
+void Vt13UartInit(void);
+void Vt13UartService(void);
+void Vt13UartIrq(void);
+void Vt13UartRxEvent(void);
+/* 左摇杆轴顺序按 VT13_SWAP_LEFT_STICK_AXES 校正，协议解析器仍按帧顺序读取。 */
+void Vt13ReadInput(Vt13Input *out);
+void Vt13ReadStats(Vt13ParserStats *out);
+
 #endif

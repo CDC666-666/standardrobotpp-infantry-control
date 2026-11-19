@@ -254,6 +254,11 @@ virtualFolder:
           files:
             - path: ../application/remote_control/ps2/ps2_task.c
           folders: []
+        - name: vt13
+          files:
+            - path: ../application/remote_control/vt13/vt13_remote.c
+            - path: ../application/remote_control/vt13/vt13_uart.c
+          folders: []
     - name: robot_cmd
       files:
         - path: ../application/robot_cmd/CAN_receive.c
@@ -321,6 +326,7 @@ targets:
         - ../application/referee
         - ../application/remote_control
         - ../application/remote_control/ps2
+        - ../application/remote_control/vt13
         - ../application/robot_cmd
         - ../application/shoot
         - ../application/IMU

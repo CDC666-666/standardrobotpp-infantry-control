@@ -144,7 +144,7 @@ int main(void)
     can_filter_init();
     delay_init();
     remote_control_init();
-#if !VOFA_ENABLE
+#if UART2_ROLE == UART2_ROLE_LEGACY
     usart1_tx_dma_init();
 #endif
   /* USER CODE END 2 */

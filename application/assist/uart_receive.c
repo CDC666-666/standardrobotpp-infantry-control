@@ -15,9 +15,20 @@
 */
 #include "uart_receive.h"
 #include "usart.h"
+#include "robot_param.h"
+#include "vt13_remote.h"
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART1) {
-        // 接收成功，处理接收到的数据
+#if VT13_ENABLE
+        Vt13UartRxEvent();
+#endif
     }
 }
+#if VT13_ENABLE
+/* 连续数据达到半缓冲时及时处理，避免只依赖 UART 空闲中断。 */
+void HAL_UART_RxHalfCpltCallback(UART_HandleTypeDef *huart)
+{
+    if (huart->Instance == USART1) Vt13UartRxEvent();
+}
+#endif
