@@ -88,11 +88,12 @@ Sbus_t sbus = {.connect_flag = 0xFF};
 static uint8_t sbus_rx_buf[2][SBUS_RX_BUF_NUM];
 
 // 上一次接收数据的时间
-static uint32_t last_receive_time = 0;
+static volatile uint32_t last_receive_time = 0;
 // 记录连续接收数据的次数
-static uint32_t receive_count = 0;
+static volatile uint32_t receive_count = 0;
+static volatile uint32_t control_input_sequence;
 // 记录非dt7的sbus遥控器连续断连次数
-static uint32_t sbus_lost_count = SBUS_MAX_LOST_NUN + 5;
+static volatile uint32_t sbus_lost_count = SBUS_MAX_LOST_NUN + 5;
 
 
 #if (__RC_TYPE != RC_DT7)
@@ -207,7 +208,8 @@ void slove_data_error(void)
     if (now - last_receive_time > RC_LOST_TIME) { \
         receive_count = 0;                        \
     }                                             \
-    receive_count++;
+    receive_count++;                               \
+    control_input_sequence++;
 // clang-format off
 
 //串口中断
@@ -249,7 +251,7 @@ void USART3_IRQHandler(void)
             //使能DMA
             __HAL_DMA_ENABLE(&hdma_usart3_rx);
 
-            if(this_time_rx_len == RC_FRAME_LENGTH)
+            if(this_time_rx_len == RC_FRAME_LENGTH && __RC_TYPE == RC_DT7)
             {
                 //处理遥控器数据
                 sbus_to_rc(sbus_rx_buf[0], &rc_ctrl);
@@ -262,7 +264,7 @@ void USART3_IRQHandler(void)
                 // USART1 is reserved for VOFA. Local USART3 RC decoding is unchanged.
                 // sbus_to_usart1(sbus_rx_buf[0]);
             } 
-            else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH)
+            else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH && __RC_TYPE != RC_DT7)
             {
                 //处理遥控器数据
 #if (__RC_TYPE == RC_AT9S_PRO)
@@ -303,7 +305,7 @@ void USART3_IRQHandler(void)
             //使能DMA
             __HAL_DMA_ENABLE(&hdma_usart3_rx);
 
-            if(this_time_rx_len == RC_FRAME_LENGTH)
+            if(this_time_rx_len == RC_FRAME_LENGTH && __RC_TYPE == RC_DT7)
             {
                 //处理遥控器数据
                 sbus_to_rc(sbus_rx_buf[1], &rc_ctrl);
@@ -316,7 +318,7 @@ void USART3_IRQHandler(void)
                 // Restore manually only when USART1 is no longer used for VOFA.
                 // sbus_to_usart1(sbus_rx_buf[1]);
             }
-            else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH)
+            else if (this_time_rx_len == SBUS_RC_FRAME_LENGTH && __RC_TYPE != RC_DT7)
             {
                 //处理遥控器数据
 #if (__RC_TYPE == RC_AT9S_PRO)
@@ -589,6 +591,47 @@ inline bool GetRcOffline(void)
 #endif
 
 #undef USE_SBUS_LOST_COUNT
+}
+
+void ControlInputRead(ControlInput_t *input)
+{
+    RC_ctrl_t frame;
+    uint32_t key;
+    bool offline;
+    if (input == NULL) return;
+
+    /* USART3 writes the packed frame in an ISR. Copy data and metadata together. */
+    key = __get_PRIMASK();
+    __disable_irq();
+    frame = rc_ctrl;
+    input->sequence = control_input_sequence;
+    input->update_time_ms = last_receive_time;
+    offline = GetRcOffline();
+    __set_PRIMASK(key);
+
+    input->valid = !offline && !toe_is_error(DBUS_TOE);
+    for (uint8_t i = 0; i < 4; ++i) {
+        if (frame.rc.ch[i] < -RC_CHANNAL_ERROR_VALUE ||
+            frame.rc.ch[i] > RC_CHANNAL_ERROR_VALUE) input->valid = false;
+    }
+    for (uint8_t i = 0; i < 2; ++i) {
+        if (frame.rc.s[i] != RC_SW_UP && frame.rc.s[i] != RC_SW_MID &&
+            frame.rc.s[i] != RC_SW_DOWN) input->valid = false;
+    }
+
+#if __RC_TYPE == RC_DT7
+    input->source = CONTROL_INPUT_DT7;
+#else
+    input->source = CONTROL_INPUT_SBUS;
+#endif
+    for (uint8_t i = 0; i < 5; ++i) input->ch[i] = input->valid ? frame.rc.ch[i] : 0;
+    for (uint8_t i = 0; i < 2; ++i) input->sw[i] = input->valid ? frame.rc.s[i] : RC_SW_UP;
+    input->keyboard = input->valid ? frame.key.v : 0;
+    input->mouse_x = input->valid ? frame.mouse.x : 0;
+    input->mouse_y = input->valid ? frame.mouse.y : 0;
+    input->mouse_z = input->valid ? frame.mouse.z : 0;
+    input->mouse_left = input->valid && frame.mouse.press_l;
+    input->mouse_right = input->valid && frame.mouse.press_r;
 }
 
 /**

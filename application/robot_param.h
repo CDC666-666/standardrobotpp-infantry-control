@@ -22,10 +22,27 @@
 #include "robot_typedef.h"
 #include "struct_typedef.h"
 
-// USART1 (C-board connector labelled UART2): VOFA-only TX when enabled.
-// Disabling this does NOT uncomment the two remote-control relay calls.
+// C 板丝印 UART2 对应 USART1；修改用途后重新编译烧录，不支持运行中热切换。
+#define UART2_ROLE_VOFA 0
+#define UART2_ROLE_VT13 1
+#define UART2_ROLE_LEGACY 2
+#ifndef UART2_ROLE
+#define UART2_ROLE UART2_ROLE_VT13  // 当前仅接收 VT13 原始数据，不接管 DT7 车辆控制。
+#endif
+#if UART2_ROLE != UART2_ROLE_VOFA && UART2_ROLE != UART2_ROLE_VT13 && UART2_ROLE != UART2_ROLE_LEGACY
+#error "Unsupported UART2_ROLE"
+#endif
+// 单一用途宏派生开关，禁止独立配置造成串口多方占用。
 #ifndef VOFA_ENABLE
-#define VOFA_ENABLE 1
+#define VOFA_ENABLE (UART2_ROLE == UART2_ROLE_VOFA)
+#elif VOFA_ENABLE != (UART2_ROLE == UART2_ROLE_VOFA)
+#error "VOFA_ENABLE must match UART2_ROLE"
+#endif
+#define VT13_ENABLE (UART2_ROLE == UART2_ROLE_VT13)
+#define VT13_BAUDRATE 921600UL
+// 本车实测左摇杆两轴与手册相反。设为 0 可查看帧内原始顺序。
+#ifndef VT13_SWAP_LEFT_STICK_AXES
+#define VT13_SWAP_LEFT_STICK_AXES 1
 #endif
 #ifndef VOFA_PERIOD_MS
 #define VOFA_PERIOD_MS 10U
@@ -97,18 +114,25 @@
 #define CUSTOM_CONTROLLER_TYPE CUSTOM_CONTROLLER_NONE
 #endif
 
+#if UART2_ROLE != UART2_ROLE_LEGACY
+#if CUSTOM_CONTROLLER_TYPE != CUSTOM_CONTROLLER_NONE
+#error "Selected UART2 role conflicts with custom-controller PC output"
+#endif
+#if __CONTROL_LINK_RC == CL_RC_UART2 || __CONTROL_LINK_PS2 == CL_PS2_UART2 || __VIRTUAL_GIMBAL_FROM == VG_FROM_UART2
+#error "Selected UART2 role cannot receive legacy board control data"
+#endif
+#endif
+// 本次 VT13 只提供原始快照；禁止把它当成已实现的 DT7 兼容控制适配器。
+#if __RC_TYPE == VT13
+#error "VT13 raw receiver is not a vehicle-control adapter; keep the existing RC type"
+#endif
+
 #if (VOFA_ENABLE != 0) && (VOFA_ENABLE != 1)
 #error "VOFA_ENABLE must be 0 or 1"
 #endif
 #if VOFA_ENABLE
 #if VOFA_PERIOD_MS < 1 || VOFA_PERIOD_MS > 1000
 #error "VOFA_PERIOD_MS must be in [1, 1000]"
-#endif
-#if CUSTOM_CONTROLLER_TYPE != CUSTOM_CONTROLLER_NONE
-#error "VOFA and custom-controller PC output both require USART1"
-#endif
-#if __CONTROL_LINK_RC == CL_RC_UART2 || __CONTROL_LINK_PS2 == CL_PS2_UART2 || __VIRTUAL_GIMBAL_FROM == VG_FROM_UART2
-#error "VOFA TX-only mode cannot receive board control data on USART1"
 #endif
 #endif
 

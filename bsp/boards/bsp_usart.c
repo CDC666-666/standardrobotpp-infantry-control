@@ -11,9 +11,9 @@ extern DMA_HandleTypeDef hdma_usart6_tx;
 
 void usart1_init(uint8_t *rx1_buf, uint8_t *rx2_buf, uint16_t dma_buf_num)
 {
-#if VOFA_ENABLE
+#if UART2_ROLE != UART2_ROLE_LEGACY
     (void)rx1_buf; (void)rx2_buf; (void)dma_buf_num;
-    return; // Do not reconfigure the HAL-owned USART1 DMA streams.
+    return; // VOFA 或 VT13 自行管理 DMA，旧板间驱动不得重配。
 #else
 
     //enable the DMA transfer for the receiver and tramsmit request
@@ -75,7 +75,7 @@ void usart1_init(uint8_t *rx1_buf, uint8_t *rx2_buf, uint16_t dma_buf_num)
 
 void usart1_tx_dma_init(void)
 {
-#if !VOFA_ENABLE
+#if UART2_ROLE == UART2_ROLE_LEGACY
 
     //enable the DMA transfer for the receiver and tramsmit request
     //使能DMA串口接收和发送
@@ -100,9 +100,9 @@ void usart1_tx_dma_init(void)
 }
 void usart1_tx_dma_enable(uint8_t *data, uint16_t len)
 {
-#if VOFA_ENABLE
+#if UART2_ROLE != UART2_ROLE_LEGACY
     (void)data; (void)len;
-    return; // Legacy relay must never interrupt a VOFA DMA frame.
+    return; // 独占用途下禁止旧转发路径发送。
 #else
     //disable DMA
     //失效DMA

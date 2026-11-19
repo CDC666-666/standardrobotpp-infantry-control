@@ -29,6 +29,8 @@
 
 ## 配套套件
 
+- [UART2 用途切换与 VT13 原始接收](./doc/uart2_role.md)：在 `robot_param.h` 用一个宏选择 VOFA 或 VT13；当前 VT13 仅接收校验，不接管车辆。
+
 - [StandardRobot++ Tool](https://gitee.com/SMBU-POLARBEAR/Serial_Port_Assistant) 上位机调试工具，可用于可视化查看机器人状态及相关参数，便于调试。
 - [ROS2_StandardRobot++](https://gitee.com/SMBU-POLARBEAR/ROS2_StandardRobotpp) ROS2驱动包，可用于实现上位机对机器人的控制。
 

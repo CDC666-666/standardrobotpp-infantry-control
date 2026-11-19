@@ -35,6 +35,7 @@
 #define REMOTE_CONTROL_H
 // clang-format off
 #include <stdbool.h>
+#include "control_input.h"
 
 #include "bsp_rc.h"
 #include "struct_typedef.h"

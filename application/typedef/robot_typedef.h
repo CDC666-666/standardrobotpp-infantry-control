@@ -59,6 +59,7 @@
 #define RC_AT9S_PRO 1  // AT9S PRO遥控器
 #define RC_HT8A     2  // HT8A遥控器
 #define RC_ET08A    3  // ET08A遥控器
+#define VT13        4  // VT13遥控器
 
 // C板id
 #define C_BOARD_DEFAULT                  1  // C板默认id
