@@ -215,12 +215,9 @@ static void GimbalAutoYawConsole(void)
 
 void Angle_solution(void)
 {
-  float motor_feedback=gimbal_direct.pitch.fdb.pos,
-        imu_feedback=gimbal_direct.feedback_pos.pitch,motor_mid=GIMBAL_DIRECT_PITCH_MID,
-        imu_mid=0.0;
-  float motor_delta=GIMBAL_DIRECT_PITCH_DIRECTION*(motor_feedback-motor_mid),
-        imu_delta=imu_feedback-imu_mid;
-  gimbal_direct.angle_zero_for_imu=imu_delta-motor_delta;
+  // 电机反馈在 +/-pi 折返；相对中值的关节角必须先折返，避免限位整体跳变 2pi。
+  gimbal_direct.angle_zero_for_imu =
+      gimbal_direct.feedback_pos.pitch - CmdGimbalJointState(AX_PITCH);
 }
 
 /*----------------Gimbal_direct_init_judge--------------------*/
@@ -490,8 +487,12 @@ void GimbalObserver(void)
 void GimbalReference(void) 
 {
   switch (gimbal_direct.mode){
+      case GIMBAL_ZERO_FORCE:
+      case GIMBAL_DBUS_ERR:
+        gimbal_direct.reference = gimbal_direct.feedback_pos;
+        break;
       case GIMBAL_INIT:{
-        gimbal_direct.reference.pitch = gimbal_direct.pitch.direction *(GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos) + gimbal_direct.feedback_pos.pitch;
+        gimbal_direct.reference.pitch = gimbal_direct.feedback_pos.pitch - CmdGimbalJointState(AX_PITCH);
         gimbal_direct.reference.yaw=loop_fp32_constrain(gimbal_direct.yaw.direction   * (GIMBAL_DIRECT_YAW_MID   - gimbal_direct.yaw.fdb.pos  ) + gimbal_direct.feedback_pos.yaw , -M_PI , M_PI);  
         break;
       }
@@ -508,9 +509,9 @@ void GimbalReference(void)
           gimbal_direct.reference.yaw=gimbal_direct.feedback_pos.yaw;
         }
         else {
-          //摇杆控制
-					gimbal_direct.reference.pitch= fp32_constrain(gimbal_direct.reference.pitch-fp32_deadline(gimbal_direct.rc->rc.ch[1], REMOTE_CONTROLLER_MIN_DEADLINE,REMOTE_CONTROLLER_MAX_DEADLINE)/REMOTE_CONTROLLER_SENSITIVITY,GIMBAL_LOWER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu);
-          gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw-fp32_deadline(gimbal_direct.rc->rc.ch[0],REMOTE_CONTROLLER_MIN_DEADLINE,REMOTE_CONTROLLER_MAX_DEADLINE)/REMOTE_CONTROLLER_SENSITIVITY,-M_PI,M_PI);
+          // 沿用提交版的摇杆增量控制，保留俯仰限位。
+          gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch - fp32_deadline(gimbal_direct.rc->rc.ch[1], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
+          gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw - fp32_deadline(gimbal_direct.rc->rc.ch[0], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, -M_PI, M_PI);
         }
         break;
       }
@@ -521,8 +522,6 @@ void GimbalReference(void)
         gimbal_direct.reference.yaw = yaw_now + loop_fp32_constrain(yaw_cmd_abs - yaw_now, -M_PI, M_PI);
         gimbal_direct.reference.pitch = fp32_constrain( -GetScCmdGimbalAngle(AX_PITCH),GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
         break;
-
-
       }
   }
 }
