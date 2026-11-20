@@ -19,6 +19,12 @@
 
 #include "attribute_typedef.h"
 
+/* 其他云台实现需显式提供工作模式许可，默认禁止发射。 */
+__weak bool GimbalAllowsShoot(void)
+{
+    return false;
+}
+
 #if GIMBAL_TYPE != GIMBAL_NONE
 
 #include <stdlib.h>

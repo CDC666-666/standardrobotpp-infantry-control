@@ -4,9 +4,9 @@
   * @brief      使用摩擦轮的发射机构控制器。
   * @note       包括初始化，目标量更新、状态量更新、控制量计算与直接控制量的发送
   * @history
-  *  Version    Date            Author          Modification
-  *  V1.0.0     Apr-1-2024      Penguin         1. done
-  *  V1.0.1     Apr-16-2024     Penguin         1. 完成基本框架
+  *  版本       日期            作者            修改说明
+  *  V1.0.0     2024-04-01      Penguin         1. 完成初版
+  *  V1.0.1     2024-04-16      Penguin         1. 完成基本框架
   *  V1.1.0     2025-1-15       CJH             1. 实现基本功能
   *  V2.0.0     2025-3-3        CJH             1. 兼容了达妙4310拨弹盘和大疆2006拨弹盘
   *                                             2. 完善了单发功能，上位机火控功能
@@ -23,6 +23,7 @@
 
 
 #include "vofa_shoot.h"
+#include "gimbal.h"
 
 #if (SHOOT_TYPE == SHOOT_FRIC_TRIGGER)
 
@@ -40,17 +41,18 @@ static Shoot_s SHOOT = {
 #define SINGLE_SHOT_INTERVAL_MS 500U
 static uint32_t last_single_shot_time;
 static uint8_t single_shot_started;
+static ControlInput_t shoot_input;
 
 
 uint8_t fric_ui;
 fp32 delta;
 
-/*-------------------- Init --------------------*/
+/*-------------------- 初始化 --------------------*/
 
 /**
  * @brief          初始化
- * @param[in]      none
- * @retval         none
+ * @param[in]      无
+ * @retval         无
  */
 void ShootInit(void) 
 { 
@@ -85,162 +87,50 @@ void ShootInit(void)
  
 }
 
-/*-------------------- Set mode --------------------*/
+/*-------------------- 设置模式 --------------------*/
 
 /**
  * @brief          设置模式
- * @param[in]      none
- * @retval         none
+ * @param[in]      无
+ * @retval         无
  */
 void ShootSetMode(void)
 {
-  /*键鼠遥控器控制方式初版----------------------------*/
-   if (switch_is_up(SHOOT.rc->rc.s[SHOOT_MODE_CHANNEL]))//上档防止误触
-   {
-        SHOOT.state = FRIC_NOT_READY;
+    bool fric_allowed, armed, vision_auto, ready;
+    ControlInputRead(&shoot_input);
+    /* 右拨杆中/下档均自动开摩擦轮，左拨杆各档位均允许开轮。 */
+    fric_allowed = shoot_input.valid && GimbalAllowsShoot() &&
+                   (switch_is_mid(shoot_input.sw[SHOOT_MODE_CHANNEL]) ||
+                    switch_is_down(shoot_input.sw[SHOOT_MODE_CHANNEL]));
+    SHOOT.fric_flag = fric_allowed;
+    SHOOT.state = fric_allowed ? FRIC_READY : FRIC_NOT_READY;
+    /* 左上档禁止拨弹；只有右下档允许视觉控制拨弹盘。 */
+    armed = fric_allowed && !switch_is_up(shoot_input.sw[1]);
+    vision_auto = armed && switch_is_down(shoot_input.sw[SHOOT_MODE_CHANNEL]);
+    ready = armed && SHOOT.state == FRIC_READY &&
+            !SHOOT.fric_motor[0].offline && !SHOOT.fric_motor[1].offline &&
+            !SHOOT.trigger_motor.offline &&
+            fabsf(SHOOT.FDB.fric_speed_fdb_R) >= FRIC_SPEED_LIMIT &&
+            fabsf(SHOOT.FDB.fric_speed_fdb_L) >= FRIC_SPEED_LIMIT;
+
+    /* 退出下档或通信许可失效时立即取消拨弹，不能延续旧请求。 */
+    SHOOT.move_flag = 0;
+    if (!ready || !vision_auto || GetUsbStatus() || !GetScCmdFricOn()) {
         SHOOT.mode = LOAD_STOP;
-        SHOOT.fric_flag = 0;
-        SHOOT.shoot_flag = 0;
-        SHOOT.mr_time = 0;
-   } 
-
-   else if (switch_is_mid(SHOOT.rc->rc.s[0]))
-   {
-        // if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_Q)//Q启动摩擦轮
-        // {
-        //   SHOOT.fric_flag = 1;
-        // }
-        // else if(SHOOT.rc->key.v & KEY_PRESSED_OFFSET_E)//E关闭摩擦轮
-        // {
-        //   SHOOT.fric_flag = 0;
-        // }
-        
-        // if (SHOOT.fric_flag)
-        // {
-        //     SHOOT.state = FRIC_READY;
-        // }
-        // else
-        // {
-        //     SHOOT.state = FRIC_NOT_READY;
-        // }
-
-        //  拨弹盘控制
-        // if (SHOOT.rc->mouse.press_l && !SHOOT.shoot_flag)
-        // {
-        //   SHOOT.mode = LAOD_BULLET;
-        // }
-        // else if (SHOOT.rc->mouse.press_r)
-        // {
-        //     if (GetScCmdFire())
-        //     {
-        //         SHOOT.mode = LOAD_BURSTFIRE;
-        //     }
-        //     else
-        //     {
-        //         SHOOT.mode = LOAD_STOP;
-        //     }
-        // }
-        // else
-        // {
-        //   SHOOT.mode = LOAD_STOP;
-        // }
-        
-        // SHOOT.shoot_flag = SHOOT.rc->mouse.press_l;
-
-        // if (SHOOT.move_flag)
-        // {
-        //     SHOOT.mode = LAOD_BULLET;
-        // }
-        
-        // if (SHOOT.rc->mouse.press_l)
-        // {
-        //     if (SHOOT.mr_time < 180)
-        //     {
-        //         SHOOT.mr_time++;
-        //     }
-        //     else
-        //     {
-        //         SHOOT.mode = LOAD_BURSTFIRE;
-        //         SHOOT.move_flag = 0;
-        //     }
-        // }
-        // else
-        // {
-        //     SHOOT.mr_time = 0;
-        // }
-
-        SHOOT.fric_flag = 1;
-        SHOOT.state = FRIC_READY;
-        SHOOT.mode = LOAD_STOP;
-        SHOOT.block_time = 0;
-        SHOOT.reverse_time = 0;
-    } 
-    else if (switch_is_down(SHOOT.rc->rc.s[0]))
-    {
-      //清弹
-        // SHOOT.state = FRIC_READY;
-        // SHOOT.mode = LAOD_BULLET;
-        // SHOOT.fric_flag = 1;
-
-      //上位机测试
-        SHOOT.state = FRIC_READY;
-
+        SHOOT.block_time = SHOOT.reverse_time = 0;
+    } else {
+        /* 沿用原下档视觉火控判断，外围联锁保持。 */
         if (GetScCmdFire())
         {
-          SHOOT.mode = LOAD_BURSTFIRE;
+            SHOOT.mode = LOAD_BURSTFIRE;
         }
         else
         {
-          SHOOT.mode = LOAD_STOP;
+            SHOOT.mode = LOAD_STOP;
         }
     }
 
-    //过热保护
-    // if (fabs(SHOOT.last_fric_vel) < FRIC_SPEED_LIMIT)
-    // {
-    //     SHOOT.mode = LOAD_STOP;
-    //     fric_ui = 0;
-    // }
-    // else
-    // {
-    //     fric_ui = 1;
-    // }
-    
-    //热量限制
-    // if (TRIGGER_MOTOR_TYPE == DJI_M2006)
-    // {
-    //     get_shoot_heat0_limit_and_heat0(&SHOOT.heat_limit, &SHOOT.heat);
-    // }
-    // else if (TRIGGER_MOTOR_TYPE == DM_4310)
-    // {
-    //     get_shoot_heat42_limit_and_heat42(&SHOOT.heat_limit, &SHOOT.heat);
-    // }
-
-    // if ((SHOOT.heat + SHOOT_HEAT_REMAIN_VALUE) > SHOOT.heat_limit)
-    // {
-    //     SHOOT.mode = LOAD_STOP;
-    // }
-
-    //安全档
-     if ((switch_is_up(SHOOT.rc->rc.s[1])))
-    {
-        SHOOT.mode = LOAD_STOP;
-        SHOOT.state = FRIC_NOT_READY;
-        SHOOT.block_time = 0;
-        SHOOT.reverse_time = 0;
-    }
-    // keep down-switch burst fire enabled
-    
-    //遥控器离线保护
-    if ( toe_is_error(DBUS_TOE) )
-    {        
-        SHOOT.state = FRIC_NOT_READY;
-        SHOOT.mode = LOAD_STOP;
-        SHOOT.block_time = 0;
-        SHOOT.reverse_time = 0;
-    }
-
-    //防堵转
+    /* 保留原有堵转反转处理。 */
     if (SHOOT.mode == LOAD_BURSTFIRE || (SHOOT.mode == LAOD_BULLET && SHOOT.move_flag))
     {
         if(SHOOT.block_time >= BLOCK_TIME)
@@ -270,12 +160,12 @@ void ShootSetMode(void)
     }
 }
 
-/*-------------------- Observe --------------------*/
+/*-------------------- 更新反馈 --------------------*/
 
 /**
  * @brief          更新状态量
- * @param[in]      none
- * @retval         none
+ * @param[in]      无
+ * @retval         无
  */
 void ShootObserver(void) 
 {
@@ -372,12 +262,12 @@ void ShootObserver(void)
     
 }
 
-/*-------------------- Reference --------------------*/
+/*-------------------- 更新目标量 --------------------*/
 
 /**
  * @brief          更新目标量
- * @param[in]      none
- * @retval         none
+ * @param[in]      无
+ * @retval         无
  */
 void ShootReference(void) 
 {
@@ -456,12 +346,12 @@ void ShootReference(void)
   
 }
 
-/*-------------------- Console --------------------*/
+/*-------------------- 计算控制量 --------------------*/
 
 /**
  * @brief          计算控制量
- * @param[in]      none
- * @retval         none
+ * @param[in]      无
+ * @retval         无
  */
 void ShootConsole(void) 
 {
@@ -513,12 +403,12 @@ void ShootConsole(void)
   
 }
 
-/*-------------------- Cmd --------------------*/
+/*-------------------- 发送控制量 --------------------*/
 
 /**
- * @brief          鍙戦€佹帶鍒堕噺
- * @param[in]      none
- * @retval         none
+ * @brief          发送控制量
+ * @param[in]      无
+ * @retval         无
  */
 void ShootSendCmd(void) 
 {
@@ -541,4 +431,4 @@ void ShootSendCmd(void)
   vofa_shoot_update(&SHOOT);
 }
 
-#endif  // SHOOT_TYPE == SHOOT_FRIC
+#endif  // 发射机构类型为摩擦轮加拨弹盘

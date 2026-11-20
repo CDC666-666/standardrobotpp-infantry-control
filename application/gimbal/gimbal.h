@@ -25,6 +25,7 @@
 // API
 
 extern inline uint8_t GetGimbalStatus(void);
+extern bool GimbalAllowsShoot(void);
 extern inline uint32_t GetGimbalDuration(void);
 extern inline float GetGimbalSpeed(uint8_t axis);
 extern inline float GetGimbalVelocity(uint8_t axis);

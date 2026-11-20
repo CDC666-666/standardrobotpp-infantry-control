@@ -30,6 +30,11 @@
 #if (GIMBAL_TYPE == GIMBAL_YAW_PITCH_DIRECT)
 Gimbal_s gimbal_direct;
 PID_t gimbal_direct_pid;
+/* 输入有效性由发射机构独立检查，此处仅提供云台工作模式许可。 */
+bool GimbalAllowsShoot(void)
+{
+    return gimbal_direct.mode == GIMBAL_IMU || gimbal_direct.mode == GIMBAL_AUTO_AIM;
+}
 
 static YawAutoLqrEso_t yaw_auto_ctrl;                 // 开源模块的 ESO、积分和上次力矩等内部状态。
 static YawAutoLqrEsoOutput_t yaw_auto_output;        // 开源模块的计算结果；本车取其中的 tau_cmd_nm 作为 yaw 基础力矩。
