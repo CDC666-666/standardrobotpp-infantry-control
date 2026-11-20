@@ -121,6 +121,11 @@
 #define CHASSIS_RC_MAX_SPEED (4.0f)     //最大速度(m/s)
 #define CHASSIS_RC_MAX_VELOCITY (2.0f)  //最大角速度(rad/s) 仅用于无云台模式
 
+// WASD uses the current top speed; acceleration and release braking are in m/s^2.
+#define CHASSIS_KEY_MAX_SPEED CHASSIS_RC_MAX_SPEED
+#define CHASSIS_KEY_ACCEL (2.0f)
+#define CHASSIS_KEY_DECEL (4.0f)
+
 /*-------------------- 云台 --------------------*/
 //云台电流发送参数
 #define GIMBAL_CAN (2)
@@ -257,6 +262,7 @@
 #define FRIC_R_SPEED                  (-613.0f)
 #define FRIC_L_SPEED                  (613.0f)
 #define FRIC_SPEED_LIMIT            (550.0f) 
+#define SHOOT_MOUSE_BURST_DELAY_MS 180U
 
 /*编码器参数------------*/
 //电机反馈码盘值范围
