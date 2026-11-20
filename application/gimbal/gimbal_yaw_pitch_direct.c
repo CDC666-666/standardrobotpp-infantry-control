@@ -30,10 +30,15 @@
 #if (GIMBAL_TYPE == GIMBAL_YAW_PITCH_DIRECT)
 Gimbal_s gimbal_direct;
 PID_t gimbal_direct_pid;
+/* 输入有效性由发射机构独立检查，此处仅提供云台工作模式许可。 */
+bool GimbalAllowsShoot(void)
+{
+    return gimbal_direct.mode == GIMBAL_IMU || gimbal_direct.mode == GIMBAL_AUTO_AIM;
+}
 
 static YawAutoLqrEso_t yaw_auto_ctrl;                 // 开源模块的 ESO、积分和上次力矩等内部状态。
 static YawAutoLqrEsoOutput_t yaw_auto_output;        // 开源模块的计算结果；本车取其中的 tau_cmd_nm 作为 yaw 基础力矩。
-// 本车 yaw 控制器配置；J、B 和反馈增益是接入初值，需依据实车辨识和整定。
+// 本车 yaw 控制器配置；J/B/摩擦为命令等效辨识候选，反馈增益保留现场值，均待实车验证。
 static const YawAutoLqrEsoConfig_t yaw_auto_cfg = {
     .j_kg_m2 = GIMBAL_AUTO_YAW_J_KG_M2,             // 转动惯量 J，kg·m²；决定加速度前馈 J*alpha。
     .b_nms_rad = GIMBAL_AUTO_YAW_B_NMS_RAD,         // 粘性阻尼 B，N·m·s/rad；决定速度前馈 B*omega。
@@ -41,8 +46,8 @@ static const YawAutoLqrEsoConfig_t yaw_auto_cfg = {
     .k_omega = GIMBAL_AUTO_YAW_K_OMEGA,             // 速度误差反馈增益，输出贡献为 -Komega*e_omega。
     .k_i = 0.0f,                                    // 位置误差积分增益；当前为 0，不施加积分力矩。
     .theta_integral_limit_rad_s = 1.0f,             // 位置误差积分状态限幅；当前积分力矩关闭。
-    .tau_coulomb_nm = 0.0f,                         // 库仑摩擦补偿幅值，N·m；当前关闭。
-    .coulomb_smooth_rad_s = 0.0f,                   // 库仑摩擦平滑速度尺度，rad/s；当前未使用。
+    .tau_coulomb_nm = GIMBAL_AUTO_YAW_COULOMB_NM,   // 库仑摩擦补偿幅值，N·m；按规划速度方向补偿。
+    .coulomb_smooth_rad_s = GIMBAL_AUTO_YAW_COULOMB_SMOOTH_RAD_S, // tanh 过零平滑速度尺度，rad/s；试验初值。
     .eso_bandwidth_rad_s = GIMBAL_AUTO_YAW_ESO_BANDWIDTH_RAD_S, // ESO 观测带宽，rad/s。
     .eso_comp_gain = 1.0f,                          // ESO 扰动补偿比例；仅在补偿开关开启时生效。
     .eso_comp_limit_nm = 0.5f,                      // ESO 扰动补偿力矩限幅，N·m。
@@ -95,7 +100,8 @@ static void GimbalAutoYawReset(void)
 
 /**
  * @brief 计算自瞄 yaw 的力矩命令，并写入 gimbal_direct.yaw.set.tor。
- * @note 将本车 IMU/电机反馈与上位机规划参考送入 LQR-ESO，再叠加底盘补偿并限幅。
+ * @note 将视觉位置参考和本车反馈送入新控制器，再叠加底盘补偿并限幅。
+ *       仍保留原有自瞄模式/有效性门控、底盘补偿和力矩限制。
  *       首个有效反馈周期只初始化开源控制器，实际输出零力矩。
  */
 static void GimbalAutoYawConsole(void)
@@ -105,7 +111,8 @@ static void GimbalAutoYawConsole(void)
     TickType_t now = xTaskGetTickCount(); // 当前 RTOS tick。
     TickType_t elapsed = now - yaw_auto_last_tick; // 距上次有效计算经过的 tick。
     fp32 theta = gimbal_direct.feedback_pos.yaw; // IMU 世界 yaw 角，rad，原始值会在 ±pi 折返。
-    fp32 omega = gimbal_direct.feedback_vel.yaw; // IMU 世界 yaw 角速度，rad/s。
+    fp32 omega = gimbal_direct.feedback_vel.yaw;
+    //fp32 omega = gimbal_direct.yaw.direction * gimbal_direct.yaw.fdb.vel;//gimbal_direct.feedback_vel.yaw; // IMU 世界 yaw 角速度，rad/s。
     fp32 tau_meas = gimbal_direct.yaw.direction * gimbal_direct.yaw.fdb.tor; // 电机实测力矩映射到控制器正方向，N·m。
     fp32 chassis_wz = ChassisGetSpeedWz(); // 底盘角速度，供本车额外力矩补偿使用。
     fp32 plan_vel = GetScCmdGimbalVelocity(AX_YAW); // 上位机规划 yaw 速度，rad/s。
@@ -152,7 +159,7 @@ static void GimbalAutoYawConsole(void)
     yaw_auto_theta_last = theta;
     yaw_auto_last_tick = now;
 
-    // 目标角映射到当前连续角附近；速度和加速度直接采用上位机规划值。
+    // 视觉位置映射到当前连续角附近，恢复使用通过有效性检查的规划速度和加速度。
     ref.theta_rad = yaw_auto_theta_unwrapped +
         loop_fp32_constrain(gimbal_direct.reference.yaw - theta, -M_PI, M_PI);
     ref.omega_rad_s = plan_vel;
@@ -168,32 +175,21 @@ static void GimbalAutoYawConsole(void)
     tau_previous = yaw_auto_ctrl.tau_cmd_last_nm;
     controller_was_ready = yaw_auto_ctrl.feedback_ready != 0U;
     // 开源链路计算参考前馈、误差反馈和 ESO 状态，输出限幅后的 yaw 力矩。
-    YawAutoLqrEso_Calc(&yaw_auto_ctrl, &yaw_auto_cfg, &feedback, &ref,
-                       dt_s, &yaw_auto_output);
+    YawAutoLqrEso_Calc(&yaw_auto_ctrl, &yaw_auto_cfg, &feedback, &ref, dt_s, &yaw_auto_output);
     // set.vel 仅保留原始规划速度参考供现有 VOFA 通道观察；MIT 发送只使用 set.tor。
     gimbal_direct.yaw.set.vel = ref.omega_rad_s;
     // 底盘角速度补偿有独立增益；最终力矩另做总限幅与斜率限制。
-    tau_world = controller_was_ready
-        ? yaw_auto_output.tau_cmd_nm +
-              GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF * chassis_wz
-        : 0.0f;
+    tau_world = controller_was_ready ? yaw_auto_output.tau_cmd_nm + GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF * chassis_wz : 0.0f;
     // 底盘补偿叠加后，再按本车总力矩上限及上次实际输出做最终约束。
-    tau_world = fp32_constrain(tau_world,
-                              -GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM,
-                              GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM);
-    tau_world = fp32_constrain(tau_world,
-                              tau_previous - yaw_auto_cfg.torque_slew_rate_nm_s * dt_s,
-                              tau_previous + yaw_auto_cfg.torque_slew_rate_nm_s * dt_s);
+    tau_world = fp32_constrain(tau_world, -GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM, GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM);
+    tau_world = fp32_constrain(tau_world, tau_previous - yaw_auto_cfg.torque_slew_rate_nm_s * dt_s, tau_previous + yaw_auto_cfg.torque_slew_rate_nm_s * dt_s);
     // 控制器正方向力矩映射回电机方向，作为 MIT 命令的力矩分量。
-    gimbal_direct.yaw.set.tor = fp32_constrain(
-        gimbal_direct.yaw.direction * tau_world,
-        -GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM, GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM);
+    gimbal_direct.yaw.set.tor = fp32_constrain(gimbal_direct.yaw.direction * tau_world, -GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM, GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM);
     if (!GimbalAutoYawFinite(gimbal_direct.yaw.set.tor)) {
         GimbalAutoYawReset();
     } else {
         // ESO 下一拍应使用实际下发值，而非叠加底盘前馈前的模块输出。
-        yaw_auto_ctrl.tau_cmd_last_nm =
-            gimbal_direct.yaw.direction * gimbal_direct.yaw.set.tor;
+        yaw_auto_ctrl.tau_cmd_last_nm = gimbal_direct.yaw.direction * gimbal_direct.yaw.set.tor;
     }
 }
 
@@ -215,12 +211,9 @@ static void GimbalAutoYawConsole(void)
 
 void Angle_solution(void)
 {
-  float motor_feedback=gimbal_direct.pitch.fdb.pos,
-        imu_feedback=gimbal_direct.feedback_pos.pitch,motor_mid=GIMBAL_DIRECT_PITCH_MID,
-        imu_mid=0.0;
-  float motor_delta=GIMBAL_DIRECT_PITCH_DIRECTION*(motor_feedback-motor_mid),
-        imu_delta=imu_feedback-imu_mid;
-  gimbal_direct.angle_zero_for_imu=imu_delta-motor_delta;
+  // 电机反馈在 +/-pi 折返；相对中值的关节角必须先折返，避免限位整体跳变 2pi。
+  gimbal_direct.angle_zero_for_imu =
+      gimbal_direct.feedback_pos.pitch - CmdGimbalJointState(AX_PITCH);
 }
 
 /*----------------Gimbal_direct_init_judge--------------------*/
@@ -490,8 +483,12 @@ void GimbalObserver(void)
 void GimbalReference(void) 
 {
   switch (gimbal_direct.mode){
+      case GIMBAL_ZERO_FORCE:
+      case GIMBAL_DBUS_ERR:
+        gimbal_direct.reference = gimbal_direct.feedback_pos;
+        break;
       case GIMBAL_INIT:{
-        gimbal_direct.reference.pitch = gimbal_direct.pitch.direction *(GIMBAL_DIRECT_PITCH_MID - gimbal_direct.pitch.fdb.pos) + gimbal_direct.feedback_pos.pitch;
+        gimbal_direct.reference.pitch = gimbal_direct.feedback_pos.pitch - CmdGimbalJointState(AX_PITCH);
         gimbal_direct.reference.yaw=loop_fp32_constrain(gimbal_direct.yaw.direction   * (GIMBAL_DIRECT_YAW_MID   - gimbal_direct.yaw.fdb.pos  ) + gimbal_direct.feedback_pos.yaw , -M_PI , M_PI);  
         break;
       }
@@ -508,9 +505,9 @@ void GimbalReference(void)
           gimbal_direct.reference.yaw=gimbal_direct.feedback_pos.yaw;
         }
         else {
-          //摇杆控制
-					gimbal_direct.reference.pitch= fp32_constrain(gimbal_direct.reference.pitch-fp32_deadline(gimbal_direct.rc->rc.ch[1], REMOTE_CONTROLLER_MIN_DEADLINE,REMOTE_CONTROLLER_MAX_DEADLINE)/REMOTE_CONTROLLER_SENSITIVITY,GIMBAL_LOWER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu);
-          gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw-fp32_deadline(gimbal_direct.rc->rc.ch[0],REMOTE_CONTROLLER_MIN_DEADLINE,REMOTE_CONTROLLER_MAX_DEADLINE)/REMOTE_CONTROLLER_SENSITIVITY,-M_PI,M_PI);
+          // 沿用提交版的摇杆增量控制，保留俯仰限位。
+          gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch - fp32_deadline(gimbal_direct.rc->rc.ch[1], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
+          gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw - fp32_deadline(gimbal_direct.rc->rc.ch[0], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, -M_PI, M_PI);
         }
         break;
       }
@@ -521,8 +518,6 @@ void GimbalReference(void)
         gimbal_direct.reference.yaw = yaw_now + loop_fp32_constrain(yaw_cmd_abs - yaw_now, -M_PI, M_PI);
         gimbal_direct.reference.pitch = fp32_constrain( -GetScCmdGimbalAngle(AX_PITCH),GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
         break;
-
-
       }
   }
 }

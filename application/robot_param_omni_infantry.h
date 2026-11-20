@@ -121,6 +121,11 @@
 #define CHASSIS_RC_MAX_SPEED (4.0f)     //最大速度(m/s)
 #define CHASSIS_RC_MAX_VELOCITY (2.0f)  //最大角速度(rad/s) 仅用于无云台模式
 
+// WASD uses the current top speed; acceleration and release braking are in m/s^2.
+#define CHASSIS_KEY_MAX_SPEED CHASSIS_RC_MAX_SPEED
+#define CHASSIS_KEY_ACCEL (2.0f)
+#define CHASSIS_KEY_DECEL (4.0f)
+
 /*-------------------- 云台 --------------------*/
 //云台电流发送参数
 #define GIMBAL_CAN (2)
@@ -131,6 +136,7 @@
 
 //鼠标灵敏度 ---------------------
 #define MOUSE_SENSITIVITY (40000.0f)
+// Mouse counts / MOUSE_SENSITIVITY = radians per received DT7 frame.
 //遥控器灵敏度 ---------------------
 #define REMOTE_CONTROLLER_SENSITIVITY (100000.0f)
 #define REMOTE_CONTROLLER_MAX_DEADLINE (20.0f)
@@ -166,7 +172,7 @@
 
 //电机角度中值设置
 #define GIMBAL_DIRECT_PITCH_MID (-2.99279666f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
-#define GIMBAL_DIRECT_YAW_MID   (-3.23662949f)    //云台初始化正对齐的时候使用的偏航轴正中心量
+#define GIMBAL_DIRECT_YAW_MID   (-2.191005f)      //云台初始化正对齐的时候使用的偏航轴正中心量
 
 //PID参数 ---------------------
 //偏航角度
@@ -194,15 +200,17 @@
 #define MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC (100.0f) // 与上位机 MPC pitch 加速度约束同量级，rad/s^2
 #define GIMBAL_DIRECT_PITCH_PLAN_ACC_FILTER_ALPHA (0.25f) // 1 kHz 控制周期一阶滤波
 
-// 新自瞄 yaw 控制器专用参数；数值是接入初值，尚未做本车模型辨识或 LQR 整定。
-// J/B 与反馈增益当前取开源脚本所列值；是否适合本车仍待辨识与整定。
-#define GIMBAL_AUTO_YAW_J_KG_M2 (0.039f)// MATLAB 调参脚本给出
-#define GIMBAL_AUTO_YAW_B_NMS_RAD (0.3f)// MATLAB 调参脚本给出
-#define GIMBAL_AUTO_YAW_K_THETA (12.0f)// 开源脚本标注的固件当前角度反馈增益
-#define GIMBAL_AUTO_YAW_K_OMEGA (3.4f)// 开源脚本标注的固件当前速度反馈增益
+// 新自瞄 yaw 控制器专用参数；2026-11-17 两种 pitch 姿态日志的命令力矩等效辨识候选，待实车验证。
+// J/B/库仑摩擦不是独立测力标定值；反馈增益保持原现场值，未重新做 LQR 整定。
+#define GIMBAL_AUTO_YAW_J_KG_M2 (0.025f)// 原接入值 0.039f
+#define GIMBAL_AUTO_YAW_B_NMS_RAD (0.012f)// 原接入值 0.3f
+#define GIMBAL_AUTO_YAW_COULOMB_NM (0.35f)// 运动库仑摩擦候选；原值 0.0f
+#define GIMBAL_AUTO_YAW_COULOMB_SMOOTH_RAD_S (0.1f)// tanh 过零平滑试验初值，未辨识；原值 0.0f
+#define GIMBAL_AUTO_YAW_K_THETA (12.1659021f)// 慢跟随对照：12 -> 8；回退值 12.0f
+#define GIMBAL_AUTO_YAW_K_OMEGA (0.7029079262f)// 开源脚本标注的固件当前速度反馈增益3.4
 #define GIMBAL_AUTO_YAW_ESO_BANDWIDTH_RAD_S (20.0f)
-// 模型及 DM 实际力矩尚未辨识；先运行 ESO 观测，暂不把估计扰动施加到电机。
-#define GIMBAL_AUTO_YAW_ESO_COMP_ENABLE (0U)
+// 模型已有初步命令等效辨识，ESO 扰动补偿已启用；DM 实际力矩与实车补偿效果仍待验证。
+#define GIMBAL_AUTO_YAW_ESO_COMP_ENABLE (1U)
 #define GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM (7.0f)
 #define GIMBAL_AUTO_YAW_TORQUE_SLEW_NM_S (1000.0f)
 #define GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF (2.5f)
@@ -254,6 +262,7 @@
 #define FRIC_R_SPEED                  (-613.0f)
 #define FRIC_L_SPEED                  (613.0f)
 #define FRIC_SPEED_LIMIT            (550.0f) 
+#define SHOOT_MOUSE_BURST_DELAY_MS 180U
 
 /*编码器参数------------*/
 //电机反馈码盘值范围
