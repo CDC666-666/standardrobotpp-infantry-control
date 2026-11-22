@@ -109,6 +109,8 @@
 #define KD_CHASSIS_FOLLOW_GIMBAL (5.05f)
 #define MAX_IOUT_CHASSIS_FOLLOW_GIMBAL (0.0f) 
 #define MAX_OUT_CHASSIS_FOLLOW_GIMBAL (15.0f) 
+// VT13 退出小陀螺后回正阶段的目标角速度上限，单位 rad/s；正常跟随保持原限幅。
+#define CHASSIS_SPIN_RETURN_MAX_WZ (6.0f)
 //跟随停止与角速度阻尼参数
 #define CHASSIS_FOLLOW_WZ_DAMPING (0.95f)    //底盘角速度阻尼系数
 // 小陀螺平移前瞻时间，单位秒；按实车偏移调节，设为 0 关闭补偿。
@@ -172,7 +174,7 @@
 
 //电机角度中值设置
 #define GIMBAL_DIRECT_PITCH_MID (-2.99279666f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
-#define GIMBAL_DIRECT_YAW_MID   (-2.191005f)      //云台初始化正对齐的时候使用的偏航轴正中心量
+#define GIMBAL_DIRECT_YAW_MID   (-1.79808521f)      //云台初始化正对齐的时候使用的偏航轴正中心量
 
 //PID参数 ---------------------
 //偏航角度

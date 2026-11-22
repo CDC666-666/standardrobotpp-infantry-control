@@ -135,7 +135,7 @@ unsigned test_size(unsigned type) {
         value = Control()
         self.lib.Vt13ReadControl(c.byref(value))
         self.assertEqual((value.move_x, value.move_y, value.yaw_input,
-                          value.pitch_input, value.wheel), (1, 1, 1, -1, -1))
+                          value.pitch_input, value.wheel), (-1, -1, 1, -1, -1))
         self.assertTrue(value.valid and value.fn_down and value.spin_down)
         self.lib.test_time(1100)
         self.lib.Vt13ReadControl(c.byref(value))

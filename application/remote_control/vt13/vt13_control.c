@@ -24,9 +24,9 @@ void Vt13MapControl(const Vt13Input *raw, Vt13ControlInput *out)
     out->mode = (Vt13Mode_e)raw->mode_switch;
     /* C 档只保留档位与元数据，摇杆、拨轮和按键均保持清零。 */
     if (out->mode == VT13_MODE_C) return;
-    /* 接收层已校正左轴顺序；左右正向沿用原车的左移为正约定。 */
-    out->move_x = raw->normalized[2];
-    out->move_y = -raw->normalized[3];
+    /* 按实车方向反馈交换平移轴；保留接收层原始快照与左移为正约定。 */
+    out->move_x = raw->normalized[3];
+    out->move_y = -raw->normalized[2];
     out->yaw_input = raw->normalized[0];
     out->pitch_input = raw->normalized[1];
     out->wheel = ((float)raw->wheel - 1024.0f) / 660.0f;

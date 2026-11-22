@@ -1,6 +1,6 @@
 # VT13 整车操控与接口
 
-适用：`StandardRobotpp master@672d1d3` 上的本次工作区改动。代码已接入，尚未烧录或实车验证；本说明覆盖较早的“VT13 仅接收、不接管车辆”说明。
+适用：当前 StandardRobotpp 的 VT13 整车控制，包含方向映射修正与退出小陀螺回正限速。本机代码的构建及主机验证已完成，尚未由本轮烧录或实车验证；本说明覆盖较早的“VT13 仅接收、不接管车辆”说明。
 
 ## 配置与回退
 
@@ -44,6 +44,8 @@
 - 初始化要求 yaw、pitch 回中误差均小于 `0.03 rad`；3 秒超时表示失败，不能当成完成。工作中云台电机、板载陀螺仪/加速度计离线或反馈非有限时也禁止工作；失败后回 C 档可重试，失联恢复也会重新初始化。
 - 云台状态完整发布，超过 `10 ms` 未更新时底盘与发射不使用旧状态。
 - 回正完成要求角差小于 `0.03 rad`、底盘角速度小于 `0.05 rad/s`，连续满足 `100 ms`。角差按最短路径折返至 `[-π, π]`。
+- 仅 VT13 退出小陀螺后的固定朝向回正阶段（`CHASSIS_SPIN_RETURN`），目标角速度 `chassis.reference.wz` 限制在 `±CHASSIS_SPIN_RETURN_MAX_WZ`；当前现场值为 `±6.0 rad/s`（约 `±344°/s`），此前 `±2.0 rad/s` 为历史调试值。回正完成进入正常跟随（`CHASSIS_FOLLOW`）后，恢复原 `±MAX_OUT_CHASSIS_FOLLOW_GIMBAL=±15 rad/s` 上限。限幅位于跟随 PID 与角速度阻尼叠加之后；小陀螺转速及旧遥控控制路径保持。实际反馈 `chassis.P_wz` 仍受惯性和制动能力影响，退出小陀螺时不能保证瞬间降到此范围。
+- VT13 跟随/回正控制中的停止判定当前为角差小于 `0.015 rad` 且实际角速度小于 `0.03 rad/s` 时目标 `wz=0`；回正状态机的完成阈值仍为前述 `0.03 rad / 0.05 rad/s`，这两处作用不同。当前 yaw 编码器中值为 `GIMBAL_DIRECT_YAW_MID=-1.79808521f`；以上均为磁盘现场值，不代表已独立核验实车效果。
 - 各发送函数再次检查失能条件并清除残留输出。零速度参考下的 PID 制动力不等于失能；C 档/失联直接发送零输出。
 - 保留原连发速度、堵转反转、PID 和自瞄控制器参数。本次没有新增热量门控，不能把已有热量参数表述为已生效保护。
 
@@ -58,7 +60,7 @@ VT03 UART → Vt13ReadInput → Vt13ReadControl
 ```
 
 - `vt13_control.h`：`Vt13ControlInput`、`Vt13ReadControl()` 和纯状态机。映射函数不维护按键边沿，重复读取同一帧没有副作用。
-- `move_x=normalized[2]`、`move_y=-normalized[3]`；`yaw_input=normalized[0]`、`pitch_input=normalized[1]`。沿用接收层已有左轴交换及原云台增量控制符号，方向仍需实车逐轴确认。
+- `move_x=normalized[3]`、`move_y=-normalized[2]`；`yaw_input=normalized[0]`、`pitch_input=normalized[1]`。2026-11-22 按用户反馈“前后左右对应原右左后前”交换控制层平移轴；接收层原始通道、已有左轴交换及云台增量控制符号保持，修正后方向待实车逐轴确认。
 - `GimbalReadControlStatus()`：读取初始化、实际工作/自瞄状态、火控、世界 yaw、关节 yaw 和时间戳。由云台任务单写，其他任务只使用完整副本。
 - `VisionReadControl()`：读取同一条已校验视觉命令与其接收时间，原协议线格式和 `mode=0/1/2` 含义保持。
 - 底盘世界 yaw 按 `wrap(yaw_world - yaw_joint)` 推算；回正沿用原跟随 PID 的误差符号、阻尼和限幅，机械方向与动态响应待台架确认。
@@ -82,6 +84,14 @@ python tests/build_control_variants.py
 覆盖 VT13 控车、VT13 接收配旧控车、VOFA 和 LEGACY；结果及日志位于被忽略的 `MDK-ARM/vt13-control-verification/`，不覆盖默认输出。Keil/EIDE 源文件与库清单同步包含新增控制文件。
 
 右上扳机映射更正后，重新通过上述 29 项主机测试和默认 VT13 Keil 全量构建（0 错误、14 条既有警告），本次构建日志单独保存在 `MDK-ARM/vt13-control-verification/trigger-fix/`；其他配置及 EIDE 的通过结果属于前一次整车接入验证。
+
+2026-11-22 底盘方向修正后，29 项主机回归通过，默认 VT13 Keil 独立全量构建 0 错误、14 条既有警告；日志在 `MDK-ARM/vt13-control-verification/direction-fix/`。仅交换控制层平移轴并同步现有测试预期，发射逻辑及控制参数保持。未重跑其他配置或 EIDE，尚未烧录或实车验证。
+
+2026-11-22 初版跟随/回正限速（历史，范围已由下述更正覆盖）：用户选定 `2 rad/s`，新增 `CHASSIS_FOLLOW_MAX_WZ=2.0f`，最终限幅由原 `±15` 改为 `±2 rad/s`。29 项主机回归通过；扩展实际底盘 C 文件替身验证正反方向、阻尼叠加、旋转不受限及回正完成切回跟随，添加限幅前新增断言失败、修正后通过。默认 VT13 Keil 全量构建 0 错误、14 条既有警告，证据在 `MDK-ARM/vt13-control-verification/follow-wz-limit/`。未重跑其他配置/EIDE，未烧录或实车验证。
+
+2026-11-22 限速范围更正：按用户澄清，仅退出小陀螺后的 `CHASSIS_SPIN_RETURN` 使用 `CHASSIS_SPIN_RETURN_MAX_WZ=2.0f`；正常跟随恢复原 `±15 rad/s`，小陀螺转速保持。29 项主机回归通过，实际底盘替身验证正反方向的回正限速，以及回正前后正常跟随都保留原上限。默认 VT13 Keil 全量构建 0 错误、14 条既有警告，日志在 `MDK-ARM/vt13-control-verification/return-only-wz-limit/`；未重跑其他配置/EIDE，未烧录或实车验证。
+
+2026-11-22 当前现场参数提交前复核：保留磁盘上的回正上限 `6.0 rad/s`、VT13 停止阈值 `0.015 rad / 0.03 rad/s`、yaw 中值 `-1.79808521 rad`；此前 2 rad/s 和较宽停止阈值属于历史。回正状态机完成阈值仍是 `0.03 rad / 0.05 rad/s` 持续 100 ms。29 项主机回归和默认 VT13 Keil 全量构建重新通过，0 错误、14 条既有警告；构建证据在 `MDK-ARM/vt13-control-verification/precommit-chassis-tuning/`。发射逻辑保持，未重跑其他配置/EIDE，未烧录或实车验证。
 
 上板顺序：先确认 C 档/断连零输出与初始化失败锁定，再逐轴确认摇杆、跟随与回正方向，随后验证 Fn、到速门控和视觉模式。未执行烧录或带弹验证。
 

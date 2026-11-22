@@ -285,11 +285,12 @@ void ChassisReference(void)
         /* 回正误差按原跟随 PID 的相对关节角符号送入，避免反转。 */
         /* 回正使用保存朝向与当前底盘朝向的最短角差；跟随使用当前关节角。 */
         float error = chassis.mode == CHASSIS_SPIN_RETURN ? Vt13WrapAngle(chassis_spin_control.return_heading - ChassisGetHeading(&chassis_gimbal)) : chassis.yaw_delta;
+        float max_wz = chassis.mode == CHASSIS_SPIN_RETURN ? CHASSIS_SPIN_RETURN_MAX_WZ : MAX_OUT_CHASSIS_FOLLOW_GIMBAL;
         /* 已对齐且基本停止旋转时不再施加跟随修正，减小中位摆动。 */
-        if (fabsf(error) < 0.03f && fabsf(chassis.P_wz) < 0.05f)
+        if (fabsf(error) < 0.015f && fabsf(chassis.P_wz) < 0.03f)
             chassis.reference.wz = 0.0f;
-        /* 未满足中位静止条件时，用原跟随 PID、阻尼和限幅计算旋转修正。 */
-        else chassis.reference.wz = fp32_constrain(PID_calc(&chassis_pid.follow, error, 0.0f) - CHASSIS_FOLLOW_WZ_DAMPING * chassis.P_wz, -MAX_OUT_CHASSIS_FOLLOW_GIMBAL, MAX_OUT_CHASSIS_FOLLOW_GIMBAL);
+        /* 仅退出小陀螺的回正阶段低速限幅；回正结束后恢复正常跟随的原速度上限。 */
+        else chassis.reference.wz = fp32_constrain(PID_calc(&chassis_pid.follow, error, 0.0f) - CHASSIS_FOLLOW_WZ_DAMPING * chassis.P_wz, -max_wz, max_wz);
     }
     chassis.spin_mode_last = chassis.mode;
 #else

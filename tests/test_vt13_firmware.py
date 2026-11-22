@@ -176,8 +176,48 @@ int main(void) {
 '''
 
 CHASSIS = r'''
+/* 验证跟随、旋转、松手回正、稳定后恢复跟随的实际模式链路及最终速度边界。 */
+static void check_follow_return_wz_limit(void) {
+    const float directions[2]={-1.0f,1.0f};
+    raw.mode_switch=0;ChassisSetMode();
+    enable_remote();
+    /* 使用实际等级起点，令原小陀螺转速高于当前回正限速，检查两者独立。 */
+    robot_status.robot_level=1;
+    for(int i=0;i<2;++i) {
+        float direction=directions[i];
+        fake_status.yaw_joint=direction;
+        chassis.P_wz=8.0f*direction;
+        ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_FOLLOW);
+        assert(fabsf(chassis.reference.wz+direction*MAX_OUT_CHASSIS_FOLLOW_GIMBAL)<0.0001f);
+        raw.trigger=true;ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_SPIN);
+        assert(chassis.reference.wz==chassis.spin_target_wz);
+        assert(chassis.reference.wz>CHASSIS_SPIN_RETURN_MAX_WZ);
+        raw.trigger=false;ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_SPIN_RETURN);
+        assert(fabsf(chassis.reference.wz+direction*CHASSIS_SPIN_RETURN_MAX_WZ)<0.0001f);
+        /* 角度误差很小时也要限制阻尼叠加后的最终参考，不能仅限制 PID 输出。 */
+        fake_status.yaw_joint=0.01f*direction;
+        chassis.P_wz=-8.0f*direction;
+        ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_SPIN_RETURN);
+        assert(fabsf(chassis.reference.wz-direction*CHASSIS_SPIN_RETURN_MAX_WZ)<0.0001f);
+        fake_status.yaw_joint=0;chassis.P_wz=0;
+        ChassisSetMode();ChassisReference();assert(chassis.reference.wz==0);
+        now_ms+=VT13_RETURN_SETTLE_MS;fake_status.update_time_ms=now_ms;
+        ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_FOLLOW&&chassis.reference.wz==0);
+        /* 回正结束后再次给大误差，确认正常跟随恢复原来的快速响应。 */
+        fake_status.yaw_joint=direction;chassis.P_wz=8.0f*direction;
+        ChassisSetMode();ChassisReference();
+        assert(chassis.mode==CHASSIS_FOLLOW);
+        assert(fabsf(chassis.reference.wz+direction*MAX_OUT_CHASSIS_FOLLOW_GIMBAL)<0.0001f);
+    }
+}
+
 int main(void) {
-    enable_remote();ChassisInit();raw.normalized[2]=1;
+    enable_remote();ChassisInit();raw.normalized[3]=1;
     fake_status.yaw_joint=1;
     ChassisSetMode();ChassisReference();
     assert(chassis.mode==CHASSIS_FOLLOW);
@@ -206,7 +246,8 @@ int main(void) {
     ChassisSetMode();ChassisReference();ChassisConsole();ChassisSendCmd();
     assert(chassis.mode==CHASSIS_LOCK);
     for(int i=0;i<4;++i)assert(sent[CHASSIS_CAN][0][i]==0);
-    puts("actual chassis coordinates and send gates: passed");return 0;
+    check_follow_return_wz_limit();
+    puts("actual chassis coordinates, wz limits and send gates: passed");return 0;
 }
 '''
 
