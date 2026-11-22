@@ -42,7 +42,7 @@ typedef enum {
     CHASSIS_FOLLOW,    //云台跟随模式  
     CHASSIS_SPIN,    //底盘旋转模式
     CHASSIS_BODY,    // 底盘坐标平移，不跟随云台
-    CHASSIS_SPIN_RETURN, // 回到松手瞬间保存的云台方向
+    CHASSIS_SPIN_RETURN, // 松手回正；N/S 无目标跟随当前云台，S 有目标保持固定朝向
 } ChassisMode_e;
 
 /**

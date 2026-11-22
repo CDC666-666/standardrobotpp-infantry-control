@@ -113,6 +113,9 @@
 #define CHASSIS_SPIN_RETURN_MAX_WZ (6.0f)
 //跟随停止与角速度阻尼参数
 #define CHASSIS_FOLLOW_WZ_DAMPING (0.95f)    //底盘角速度阻尼系数
+// 仅 N 档及 S 档无目标回正：在近中点范围内平滑增强角速度制动。
+#define CHASSIS_SPIN_RETURN_BRAKE_ANGLE (0.20f)       // rad，约 11.5 度。
+#define CHASSIS_SPIN_RETURN_NEAR_WZ_DAMPING (1.50f)   // 首轮实车对照值，尚未完成标定。
 // 小陀螺平移前瞻时间，单位秒；按实车偏移调节，设为 0 关闭补偿。
 #define CHASSIS_SPIN_LEAD_TIME (0.10f)
 
@@ -174,7 +177,7 @@
 
 //电机角度中值设置
 #define GIMBAL_DIRECT_PITCH_MID (-2.99279666f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
-#define GIMBAL_DIRECT_YAW_MID   (-1.79808521f)      //云台初始化正对齐的时候使用的偏航轴正中心量
+#define GIMBAL_DIRECT_YAW_MID   (-0.540360451)      //云台初始化正对齐的时候使用的偏航轴正中心量
 
 //PID参数 ---------------------
 //偏航角度
@@ -191,7 +194,7 @@
 #define MAX_IOUT_GIMBAL_YAW_VELOCITY (1.0f)
 #define MAX_OUT_GIMBAL_YAW_VELOCITY (7.0f)   // yaw 速度环输出力矩上限，N*m；首次力矩测试限幅
 
-#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (2.0f)
+#define GIMBAL_DIRECT_YAW_WZ_FEEDFORWARD (1.25f)
 #define GIMBAL_DIRECT_YAW_GYRO_DAMPING (0.25f)
 
 // pitch 仍沿用原自瞄位置/速度 PID 和规划前馈。

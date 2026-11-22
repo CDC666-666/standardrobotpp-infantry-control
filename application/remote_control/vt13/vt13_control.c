@@ -119,7 +119,7 @@ void Vt13UpdateInit(Vt13InitControl *state, bool enabled, bool feedback_valid,
 
 /**
  * @brief 按失能、旋转、松手回正和目标状态选择底盘模式。
- * @note 底盘任务独占该状态；只在松手沿保存一次云台朝向，回正需连续满足稳定条件。
+ * @note N 档及 S 档无目标时持续对准当前云台；S 档有目标保留固定朝向回正。
  */
 Vt13ChassisMode_e Vt13UpdateSpin(Vt13SpinControl *state, const Vt13ControlInput *input,
                                 const GimbalControlStatus *gimbal, float chassis_wz,
@@ -137,18 +137,23 @@ Vt13ChassisMode_e Vt13UpdateSpin(Vt13SpinControl *state, const Vt13ControlInput 
         state->returning = state->settling = false;
         return VT13_CHASSIS_SPIN;
     }
-    /* 上拍按住、本拍松开构成松手沿，只在这一拍保存固定回正方向。 */
+    /* 松手沿进入回正；保存朝向仅供 S 档有目标的原固定回正路径使用。 */
     if (state->spin_last) {
         state->return_heading = gimbal->yaw_world;
         state->returning = true;
         state->settling = false;
     }
     state->spin_last = false;
-    /* 回正尚未完成时，优先处理固定朝向，不立即切换跟随或底盘坐标模式。 */
+    /* 仅 N 档及 S 档无目标使用当前关节角；S 档有目标保留原误差与完成阈值。 */
     if (state->returning) {
-        float error = Vt13WrapAngle(state->return_heading - Vt13ChassisHeading(gimbal));
+        bool fixed_heading = input->mode == VT13_MODE_S && gimbal->auto_active;
+        float error = fixed_heading
+                      ? Vt13WrapAngle(state->return_heading - Vt13ChassisHeading(gimbal))
+                      : Vt13WrapAngle(gimbal->yaw_joint);
+        float angle_limit = fixed_heading ? 0.03f : VT13_CHASSIS_ALIGN_ANGLE_RAD;
+        float wz_limit = fixed_heading ? 0.05f : VT13_CHASSIS_ALIGN_WZ_RAD_S;
         /* 角度误差与实际角速度同时足够小时，才开始累计稳定时间。 */
-        if (fabsf(error) < 0.03f && fabsf(chassis_wz) < 0.05f) {
+        if (fabsf(error) < angle_limit && fabsf(chassis_wz) < wz_limit) {
             /* 首次进入稳定区时记录起点，连续满足时不能反复重置计时。 */
             if (!state->settling) state->settle_start_ms = now_ms;
             state->settling = true;

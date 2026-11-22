@@ -211,17 +211,21 @@ unsigned test_size(unsigned type) {
             self.assertFalse(self.spin.returning)
             self.input.valid = True
 
-    def test_release_captures_current_gimbal_not_start_heading(self):
+    def test_return_tracks_current_joint_after_world_angle_recovers(self):
         self.input.spin_down = True
         self.status.yaw_world = 0.1
         self.step_spin()
         self.status.yaw_world, self.status.yaw_joint = 1.2, 0.8
         self.input.spin_down = False
         self.assertEqual(self.step_spin(102), 4)
-        self.assertAlmostEqual(self.spin.return_heading, 1.2, places=6)
-        self.status.yaw_world = 2.0
-        self.step_spin(104)
-        self.assertAlmostEqual(self.spin.return_heading, 1.2, places=6)
+        # 云台恢复原方向，而底盘停在旧松手方向时，必须继续回正，不能开始到位计时。
+        self.status.yaw_world, self.status.yaw_joint = 0.0, -1.2
+        self.assertEqual(self.step_spin(104), 4)
+        self.assertFalse(self.spin.settling)
+        self.assertEqual(self.step_spin(204), 4)
+        self.status.yaw_joint = 0.0
+        self.assertEqual(self.step_spin(206), 4)
+        self.assertEqual(self.step_spin(306), 1)
 
     def test_return_settle_restarts_on_motion_and_exits_to_correct_mode(self):
         for target in (False, True):
@@ -236,17 +240,66 @@ unsigned test_size(unsigned type) {
             self.assertEqual(self.step_spin(210), 4)
             self.assertEqual(self.step_spin(212), 2 if target else 1)
 
-    def test_repress_cancels_old_return_and_recaptures_release(self):
+    def test_s_with_target_keeps_fixed_heading_and_original_settle_limits(self):
+        self.input.mode, self.status.auto_active = 2, True
+        self.input.spin_down = True
+        self.status.yaw_world, self.status.yaw_joint = 0.1, 0.8
+        self.step_spin(100)
+        self.input.spin_down = False
+        self.status.yaw_world = 1.2
+        self.assertEqual(self.step_spin(102), 4)
+        self.assertAlmostEqual(self.spin.return_heading, 1.2, places=6)
+        # 固定方向误差为 0.02，角速度为 0.04，保留原有目标路径的完成阈值。
+        self.status.yaw_world, self.status.yaw_joint = 2.0, 0.82
+        self.assertEqual(self.step_spin(104, wz=0.04), 4)
+        self.assertTrue(self.spin.settling)
+        self.assertAlmostEqual(self.spin.return_heading, 1.2, places=6)
+        self.assertEqual(self.step_spin(203, wz=0.04), 4)
+        self.assertEqual(self.step_spin(204, wz=0.04), 2)
+
+    def test_repress_cancels_return_and_restarts_settle_on_release(self):
         self.input.spin_down = True
         self.step_spin()
         self.input.spin_down = False
         self.step_spin(102)
         self.input.spin_down = True
         self.assertEqual(self.step_spin(104), 3)
+        self.assertFalse(self.spin.returning)
+        self.assertFalse(self.spin.settling)
         self.status.yaw_world = 1.0
+        self.status.yaw_joint = 0.2
         self.input.spin_down = False
-        self.step_spin(106)
-        self.assertAlmostEqual(self.spin.return_heading, 1.0)
+        self.assertEqual(self.step_spin(106), 4)
+        self.assertFalse(self.spin.settling)
+        self.status.yaw_joint = 0
+        self.assertEqual(self.step_spin(108), 4)
+        self.assertEqual(self.step_spin(208), 1)
+
+    def test_return_uses_follow_stop_thresholds_in_both_directions(self):
+        for direction in (-1, 1):
+            self.spin = Spin()
+            self.status.yaw_joint = 0
+            self.input.spin_down = True
+            self.step_spin(10)
+            self.input.spin_down = False
+            self.step_spin(12)
+            # 旧完成阈值内但仍未进入跟随停止区，不能提前恢复快速跟随。
+            self.status.yaw_joint = direction * 0.02
+            self.assertEqual(self.step_spin(112), 4)
+            self.assertFalse(self.spin.settling)
+            self.status.yaw_joint = direction * 0.014
+            self.assertEqual(self.step_spin(114, wz=direction * 0.04), 4)
+            self.assertFalse(self.spin.settling)
+            self.assertEqual(self.step_spin(116, wz=direction * 0.029), 4)
+            self.assertTrue(self.spin.settling)
+            # 云台移动打断稳定计时，即使旧的计时期限已到也不能退出回正。
+            self.status.yaw_joint = direction * 0.02
+            self.assertEqual(self.step_spin(216), 4)
+            self.assertFalse(self.spin.settling)
+            self.status.yaw_joint = 0
+            self.assertEqual(self.step_spin(218), 4)
+            self.assertEqual(self.step_spin(317), 4)
+            self.assertEqual(self.step_spin(318), 1)
 
     def test_heading_crosses_pi_by_shortest_path(self):
         self.status.yaw_world, self.status.yaw_joint = -3.13, 0.02

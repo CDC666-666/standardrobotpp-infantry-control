@@ -5,6 +5,9 @@
 
 #define VT13_CONTROL_STATUS_TIMEOUT_MS 10U
 #define VT13_RETURN_SETTLE_MS 100U
+/* N 档及 S 档无目标时，跟随停止区与回正完成判据共用。 */
+#define VT13_CHASSIS_ALIGN_ANGLE_RAD 0.015f
+#define VT13_CHASSIS_ALIGN_WZ_RAD_S 0.03f
 
 typedef enum { VT13_MODE_C, VT13_MODE_N, VT13_MODE_S } Vt13Mode_e;
 
@@ -44,7 +47,7 @@ typedef enum {
 
 typedef struct {
     bool spin_last, returning, settling;
-    float return_heading;
+    float return_heading; // S 档有目标时沿用松手固定朝向回正。
     uint32_t settle_start_ms;
 } Vt13SpinControl;
 

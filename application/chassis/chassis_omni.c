@@ -47,15 +47,6 @@ static GimbalControlStatus chassis_gimbal;
 static Vt13SpinControl chassis_spin_control;
 
 /**
- * @brief 读取用于松手回正的底盘世界朝向。
- * @note 输入为同一拍云台完整快照，沿用现有世界角与关节角的正方向约定。
- */
-static float ChassisGetHeading(const GimbalControlStatus *gimbal)
-{
-    return Vt13ChassisHeading(gimbal);
-}
-
-/**
  * @brief 更新小陀螺及松手回正状态并映射到底盘模式。
  * @note 纯状态机决定优先级，此函数只转换为底盘已有或新增的模式枚举。
  */
@@ -67,7 +58,7 @@ static void ChassisUpdateSpinReturn(void)
         case VT13_CHASSIS_FOLLOW: /* 常规跟随云台。 */ chassis.mode = CHASSIS_FOLLOW; break;
         case VT13_CHASSIS_BODY: /* 有目标时采用底盘坐标且不跟随。 */ chassis.mode = CHASSIS_BODY; break;
         case VT13_CHASSIS_SPIN: /* 按住右上扳机键时旋转。 */ chassis.mode = CHASSIS_SPIN; break;
-        case VT13_CHASSIS_RETURN: /* 松手后先完成固定朝向回正。 */ chassis.mode = CHASSIS_SPIN_RETURN; break;
+        case VT13_CHASSIS_RETURN: /* 按当前档位与目标状态选择原固定回正或限速跟随。 */ chassis.mode = CHASSIS_SPIN_RETURN; break;
         default: /* 失能或未知状态均锁定。 */ chassis.mode = CHASSIS_LOCK; break;
     }
 }
@@ -257,10 +248,12 @@ void ChassisReference(void)
         chassis.spin_mode_last = chassis.mode;
         return;
     }
-    /* 模式发生切换时清跟随 PID，避免带入上一模式的历史误差。 */
-    if (chassis.mode != chassis.spin_mode_last) PID_clear(&chassis_pid.follow);
+    /* 限速回正转正常跟随时目标来源不变，保留控制器连续性；其他切换清历史误差。 */
+    if (chassis.mode != chassis.spin_mode_last &&
+        !(chassis.spin_mode_last == CHASSIS_SPIN_RETURN && chassis.mode == CHASSIS_FOLLOW))
+        PID_clear(&chassis_pid.follow);
     ChassisBuildTranslationReference();
-    /* 小陀螺模式独立生成旋转速度，覆盖跟随和固定回正参考。 */
+    /* 小陀螺模式独立生成旋转速度，覆盖跟随和限速回正参考。 */
     if (chassis.mode == CHASSIS_SPIN) {
         /* 保留原有旋转速度、等级和加速参数。 */
         /* 刚进入旋转时重新建立速度平滑状态，不沿用退出前的旋转参考。 */
@@ -281,16 +274,25 @@ void ChassisReference(void)
         if (chassis.spin_acceleration_limit < 30.0f) chassis.spin_acceleration_limit += 0.5f;
     } else /* 有目标的底盘坐标模式取消云台跟随，角速度目标置零。 */ if (chassis.mode == CHASSIS_BODY) {
         chassis.reference.wz = 0.0f;
-    } else { /* 其余可运动模式分别使用固定回正角或当前云台关节角来计算旋转修正。 */
-        /* 回正误差按原跟随 PID 的相对关节角符号送入，避免反转。 */
-        /* 回正使用保存朝向与当前底盘朝向的最短角差；跟随使用当前关节角。 */
-        float error = chassis.mode == CHASSIS_SPIN_RETURN ? Vt13WrapAngle(chassis_spin_control.return_heading - ChassisGetHeading(&chassis_gimbal)) : chassis.yaw_delta;
+    } else { /* N 档及 S 档无目标统一跟随；S 档有目标保留松手固定朝向回正。 */
+        bool fixed_heading = chassis.mode == CHASSIS_SPIN_RETURN && chassis_input.mode == VT13_MODE_S && chassis_gimbal.auto_active;
+        float error = fixed_heading ? Vt13WrapAngle(chassis_spin_control.return_heading - Vt13ChassisHeading(&chassis_gimbal)) : Vt13WrapAngle(chassis.yaw_delta);
         float max_wz = chassis.mode == CHASSIS_SPIN_RETURN ? CHASSIS_SPIN_RETURN_MAX_WZ : MAX_OUT_CHASSIS_FOLLOW_GIMBAL;
+        float wz_damping = CHASSIS_FOLLOW_WZ_DAMPING;
+        /* 仅 N/S 无目标回正时，越接近中点越增强制动；远处及其他模式保持原阻尼。 */
+        if (chassis.mode == CHASSIS_SPIN_RETURN && !fixed_heading) {
+            float blend = fp32_constrain(1.0f - fabsf(error) / CHASSIS_SPIN_RETURN_BRAKE_ANGLE, 0.0f, 1.0f);
+            wz_damping += blend * (CHASSIS_SPIN_RETURN_NEAR_WZ_DAMPING - CHASSIS_FOLLOW_WZ_DAMPING);
+        }
         /* 已对齐且基本停止旋转时不再施加跟随修正，减小中位摆动。 */
-        if (fabsf(error) < 0.015f && fabsf(chassis.P_wz) < 0.03f)
+        if (fabsf(error) < VT13_CHASSIS_ALIGN_ANGLE_RAD &&
+            fabsf(chassis.P_wz) < VT13_CHASSIS_ALIGN_WZ_RAD_S) {
+            /* 新跟随回正路径清除停止前差分误差；S 档有目标保留原控制器行为。 */
+            if (!fixed_heading) PID_clear(&chassis_pid.follow);
             chassis.reference.wz = 0.0f;
+        }
         /* 仅退出小陀螺的回正阶段低速限幅；回正结束后恢复正常跟随的原速度上限。 */
-        else chassis.reference.wz = fp32_constrain(PID_calc(&chassis_pid.follow, error, 0.0f) - CHASSIS_FOLLOW_WZ_DAMPING * chassis.P_wz, -max_wz, max_wz);
+        else chassis.reference.wz = fp32_constrain(PID_calc(&chassis_pid.follow, error, 0.0f) - wz_damping * chassis.P_wz, -max_wz, max_wz);
     }
     chassis.spin_mode_last = chassis.mode;
 #else

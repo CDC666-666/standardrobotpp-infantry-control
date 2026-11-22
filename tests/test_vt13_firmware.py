@@ -235,9 +235,13 @@ int main(void) {
     assert(chassis.mode==CHASSIS_SPIN);
     raw.trigger=false;fake_status.yaw_world=1.2f;
     ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_SPIN_RETURN);
+    /* S 档有目标保留松手固定朝向；云台移动不改变已保存目标。 */
     assert(fabsf(chassis_spin_control.return_heading-1.2f)<0.0001f);
-    fake_status.yaw_world=2;ChassisSetMode();
+    fake_status.yaw_world=2;fake_status.yaw_joint=0.8f;
+    ChassisSetMode();ChassisReference();
+    assert(chassis.mode==CHASSIS_SPIN_RETURN);
     assert(fabsf(chassis_spin_control.return_heading-1.2f)<0.0001f);
+    assert(chassis.reference.wz==0);
     for(int i=0;i<4;++i)chassis.wheel[i].set.curr=123;
     raw.valid=false;ChassisSendCmd();
     for(int i=0;i<4;++i)assert(sent[CHASSIS_CAN][0][i]==0);
