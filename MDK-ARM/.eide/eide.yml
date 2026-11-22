@@ -256,6 +256,7 @@ virtualFolder:
           folders: []
         - name: vt13
           files:
+            - path: ../application/remote_control/vt13/vt13_control.c
             - path: ../application/remote_control/vt13/vt13_remote.c
             - path: ../application/remote_control/vt13/vt13_uart.c
           folders: []

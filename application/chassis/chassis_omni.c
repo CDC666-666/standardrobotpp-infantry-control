@@ -30,6 +30,7 @@
 #include "detect_task.h"
 #include "gimbal.h"
 #include "math.h"
+#include <string.h>
 #include "usb_debug.h"
 #include "chassis_power_control.h"
 #include "referee.h"
@@ -39,6 +40,83 @@
 
 Chassis_s chassis;
 PID_t chassis_pid;
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+static Vt13ControlInput chassis_input;
+static GimbalControlStatus chassis_gimbal;
+static Vt13SpinControl chassis_spin_control;
+
+/**
+ * @brief 读取用于松手回正的底盘世界朝向。
+ * @note 输入为同一拍云台完整快照，沿用现有世界角与关节角的正方向约定。
+ */
+static float ChassisGetHeading(const GimbalControlStatus *gimbal)
+{
+    return Vt13ChassisHeading(gimbal);
+}
+
+/**
+ * @brief 更新小陀螺及松手回正状态并映射到底盘模式。
+ * @note 纯状态机决定优先级，此函数只转换为底盘已有或新增的模式枚举。
+ */
+static void ChassisUpdateSpinReturn(void)
+{
+    Vt13ChassisMode_e mode = Vt13UpdateSpin(&chassis_spin_control, &chassis_input, &chassis_gimbal, chassis.P_wz, HAL_GetTick());
+    /* 将统一状态机的结果转换为底盘模式，未知结果默认锁定。 */
+    switch (mode) {
+        case VT13_CHASSIS_FOLLOW: /* 常规跟随云台。 */ chassis.mode = CHASSIS_FOLLOW; break;
+        case VT13_CHASSIS_BODY: /* 有目标时采用底盘坐标且不跟随。 */ chassis.mode = CHASSIS_BODY; break;
+        case VT13_CHASSIS_SPIN: /* 按住右上扳机键时旋转。 */ chassis.mode = CHASSIS_SPIN; break;
+        case VT13_CHASSIS_RETURN: /* 松手后先完成固定朝向回正。 */ chassis.mode = CHASSIS_SPIN_RETURN; break;
+        default: /* 失能或未知状态均锁定。 */ chassis.mode = CHASSIS_LOCK; break;
+    }
+}
+
+/**
+ * @brief 根据当前模式生成底盘坐标系下的平移参考。
+ * @note 底盘坐标及回正模式直接使用摇杆；跟随和旋转模式把云台方向指令转到底盘坐标。
+ */
+static void ChassisBuildTranslationReference(void)
+{
+    float vx = fp32_deadline(chassis_input.move_x * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
+    float vy = fp32_deadline(chassis_input.move_y * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
+    chassis.reference_rc.vx = vx;
+    chassis.reference_rc.vy = vy;
+    /* 有目标不跟随或松手回正时，摇杆始终按底盘自身方向平移。 */
+    if (chassis.mode == CHASSIS_BODY || chassis.mode == CHASSIS_SPIN_RETURN) {
+        chassis.reference.vx = vx;
+        chassis.reference.vy = vy;
+    } else { /* 跟随和旋转的平移输入按云台朝向解释，需要转换到底盘坐标。 */
+        float angle = chassis.yaw_delta;
+        /* 旋转时按实际角速度增加前瞻角，沿用原有平移滞后补偿。 */
+        if (chassis.mode == CHASSIS_SPIN) angle += CHASSIS_SPIN_LEAD_TIME * chassis.P_wz;
+        chassis.reference.vx = vx * cosf(angle) - vy * sinf(angle);
+        chassis.reference.vy = vx * sinf(angle) + vy * cosf(angle);
+    }
+}
+
+/**
+ * @brief 强制底盘零输出并清除控制器和回正残留。
+ * @note 同时清除参考、轮端电流、PID 与旋转状态，不能仅把目标速度设为零。
+ */
+static void ChassisForceDisable(void)
+{
+    chassis.mode = CHASSIS_LOCK;
+    chassis.reference.vx = chassis.reference.vy = chassis.reference.wz = 0.0f;
+    chassis.reference_rc.vx = chassis.reference_rc.vy = 0.0f;
+    chassis.force_x = chassis.force_y = chassis.torque_wz = 0.0f;
+    chassis.wz_set_smoothed = 0.0f;
+    memset(&chassis_spin_control, 0, sizeof(chassis_spin_control));
+    PID_clear(&chassis.vel_x_pid);
+    PID_clear(&chassis.vel_y_pid);
+    PID_clear(&chassis.omega_pid);
+    PID_clear(&chassis_pid.follow);
+    for (int i = 0; i < 4; ++i) {
+        chassis.set[i] = chassis.wheel_force[i] = 0.0f;
+        chassis.wheel[i].set.curr = 0.0f;
+    }
+}
+#endif
 
 /*-------------------- 初始化 --------------------*/
 
@@ -99,6 +177,19 @@ void ChassisInit(void)
  */
 void ChassisSetMode(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    Vt13ReadControl(&chassis_input);
+    GimbalReadControlStatus(&chassis_gimbal);
+    chassis.yaw_delta = chassis_gimbal.yaw_joint;
+    ChassisUpdateSpinReturn();
+    for (int i = 0; i < 4; ++i) {
+        /* 任意轮电机离线都禁止继续给整套底盘分配驱动力。 */
+        if (chassis.wheel[i].offline) chassis.mode = CHASSIS_LOCK;
+    }
+    /* 选择锁定后立即清除参考、电流和旋转状态，避免残留输出。 */
+    if (chassis.mode == CHASSIS_LOCK) ChassisForceDisable();
+#else
     if ((toe_is_error(DBUS_TOE)) || switch_is_up(chassis.rc->rc.s[1]))
     {
         chassis.mode = CHASSIS_LOCK;
@@ -111,6 +202,7 @@ void ChassisSetMode(void)
     {
         chassis.mode = CHASSIS_SPIN;
     }
+#endif
 }
 
 
@@ -157,6 +249,50 @@ void ChassisObserver(void)
  */
 void ChassisReference(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    /* 失能分支清零后直接退出，不再生成本拍运动参考。 */
+    if (chassis.mode == CHASSIS_LOCK) {
+        ChassisForceDisable();
+        chassis.spin_mode_last = chassis.mode;
+        return;
+    }
+    /* 模式发生切换时清跟随 PID，避免带入上一模式的历史误差。 */
+    if (chassis.mode != chassis.spin_mode_last) PID_clear(&chassis_pid.follow);
+    ChassisBuildTranslationReference();
+    /* 小陀螺模式独立生成旋转速度，覆盖跟随和固定回正参考。 */
+    if (chassis.mode == CHASSIS_SPIN) {
+        /* 保留原有旋转速度、等级和加速参数。 */
+        /* 刚进入旋转时重新建立速度平滑状态，不沿用退出前的旋转参考。 */
+        if (chassis.spin_mode_last != CHASSIS_SPIN) {
+            chassis.wz_set_smoothed = 0.0f;
+            chassis.spin_acceleration_limit = 10.0f;
+        }
+        /* 平移指令较大时选择较低旋转速度，其余情况采用静止旋转速度，均叠加既有等级项。 */
+        chassis.spin_target_wz = (fabsf(chassis.reference_rc.vx) > 0.4f || fabsf(chassis.reference_rc.vy) > 0.4f) ? 5.0f + robot_status.robot_level * 0.5f : 6.0f + robot_status.robot_level * 0.6f;
+        chassis.wz_error = chassis.spin_target_wz - chassis.wz_set_smoothed;
+        /* 目标增量超过本拍允许值时按原有增量限制逼近目标。 */
+        if (chassis.wz_error > chassis.spin_acceleration_limit)
+            chassis.wz_set_smoothed += chassis.spin_acceleration_limit;
+        /* 剩余差值在允许范围内时直接到达旋转目标，避免越过目标。 */
+        else chassis.wz_set_smoothed = chassis.spin_target_wz;
+        chassis.reference.wz = chassis.wz_set_smoothed;
+        /* 加速阶段逐步放宽每拍增量，达到既有上限后保持。 */
+        if (chassis.spin_acceleration_limit < 30.0f) chassis.spin_acceleration_limit += 0.5f;
+    } else /* 有目标的底盘坐标模式取消云台跟随，角速度目标置零。 */ if (chassis.mode == CHASSIS_BODY) {
+        chassis.reference.wz = 0.0f;
+    } else { /* 其余可运动模式分别使用固定回正角或当前云台关节角来计算旋转修正。 */
+        /* 回正误差按原跟随 PID 的相对关节角符号送入，避免反转。 */
+        /* 回正使用保存朝向与当前底盘朝向的最短角差；跟随使用当前关节角。 */
+        float error = chassis.mode == CHASSIS_SPIN_RETURN ? Vt13WrapAngle(chassis_spin_control.return_heading - ChassisGetHeading(&chassis_gimbal)) : chassis.yaw_delta;
+        /* 已对齐且基本停止旋转时不再施加跟随修正，减小中位摆动。 */
+        if (fabsf(error) < 0.03f && fabsf(chassis.P_wz) < 0.05f)
+            chassis.reference.wz = 0.0f;
+        /* 未满足中位静止条件时，用原跟随 PID、阻尼和限幅计算旋转修正。 */
+        else chassis.reference.wz = fp32_constrain(PID_calc(&chassis_pid.follow, error, 0.0f) - CHASSIS_FOLLOW_WZ_DAMPING * chassis.P_wz, -MAX_OUT_CHASSIS_FOLLOW_GIMBAL, MAX_OUT_CHASSIS_FOLLOW_GIMBAL);
+    }
+    chassis.spin_mode_last = chassis.mode;
+#else
     switch (chassis.mode){
         case CHASSIS_LOCK:{
             chassis.reference.vx=0;
@@ -244,6 +380,7 @@ void ChassisReference(void)
 
             chassis.wz_error = chassis.spin_target_wz - chassis.wz_set_smoothed;
 
+            /* 目标增量超过本拍允许值时按原有增量限制逼近目标。 */
             if (chassis.wz_error > chassis.spin_acceleration_limit)
             {
                 chassis.wz_set_smoothed += chassis.spin_acceleration_limit;
@@ -263,6 +400,7 @@ void ChassisReference(void)
     }
     
     chassis.spin_mode_last = chassis.mode;
+#endif
 }
 
 /*-------------------- 计算控制量 --------------------*/
@@ -343,6 +481,21 @@ float ChassisGetSpeedWz(void)
 
 void ChassisSendCmd(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    Vt13ControlInput latest;
+    GimbalControlStatus status;
+    Vt13ReadControl(&latest);
+    GimbalReadControlStatus(&status);
+    /* 发送前复核遥控、初始化/反馈时效及档位一致性，失效即清零本拍电流。 */
+    if (!Vt13ControlEnabled(&latest) || !Vt13StatusReady(&status, HAL_GetTick()) ||
+        latest.mode != chassis_input.mode) ChassisForceDisable();
+    for (int i = 0; i < 4; ++i) {
+        /* 最终发送前任一轮离线都清零全部轮电流，不发送之前计算的残留值。 */
+        if (chassis.wheel[i].offline) ChassisForceDisable();
+    }
+#endif
+
 // #if 1 // TEMP lifted-wheel current test; change to 0 to restore normal chassis output.
 //     static volatile uint8_t test_wheel_id = 2; // CAN ID: 1~4
 //     // static volatile int16_t test_current_raw = 200; // Previous manual-current test.

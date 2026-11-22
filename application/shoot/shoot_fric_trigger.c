@@ -24,6 +24,7 @@
 
 #include "vofa_shoot.h"
 #include "gimbal.h"
+#include <string.h>
 
 #if (SHOOT_TYPE == SHOOT_FRIC_TRIGGER)
 
@@ -41,7 +42,72 @@ static Shoot_s SHOOT = {
 #define SINGLE_SHOT_INTERVAL_MS 500U
 static uint32_t last_single_shot_time;
 static uint8_t single_shot_started;
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+static Vt13ControlInput shoot_input;
+static GimbalControlStatus shoot_gimbal;
+static Vt13ShootControl shoot_control;
+static bool shoot_enabled;
+
+/**
+ * @brief 强制摩擦轮和拨弹零输出并清除所有发射残留。
+ * @note 清除 Fn 锁存、堵转计时、单发状态和 PID；恢复后需要重新按 Fn 开轮。
+ */
+static void ShootForceDisable(void)
+{
+    memset(&shoot_control, 0, sizeof(shoot_control));
+    shoot_enabled = false;
+    SHOOT.mode = LOAD_STOP;
+    SHOOT.state = FRIC_NOT_READY;
+    SHOOT.fric_flag = SHOOT.move_flag = 0;
+    SHOOT.block_time = SHOOT.reverse_time = 0;
+    last_single_shot_time = 0;
+    single_shot_started = 0;
+    SHOOT.REF.fric_speed_ref_R = SHOOT.REF.fric_speed_ref_L = 0.0f;
+    SHOOT.REF.trigger_speed_ref = 0.0f;
+    SHOOT.REF.trigger_angel_ref = SHOOT.FDB.trigger_angel_fdb;
+    SHOOT.fric_motor[0].set.curr = SHOOT.fric_motor[1].set.curr = 0.0f;
+    SHOOT.trigger_motor.set.curr = 0.0f;
+    PID_clear(&SHOOT.fric_pid[0]);
+    PID_clear(&SHOOT.fric_pid[1]);
+    PID_clear(&SHOOT.trigger_angel_pid);
+    PID_clear(&SHOOT.trigger_speed_pid);
+}
+
+/**
+ * @brief 更新本发射任务独占的 Fn 摩擦轮开关状态。
+ * @note 只处理有效按下沿，不因任务重复读取同一遥控帧而反复开关。
+ */
+static void ShootUpdateFrictionSwitch(const Vt13ControlInput *input, bool enabled)
+{
+    Vt13UpdateFriction(&shoot_control, input, enabled);
+}
+
+/**
+ * @brief 更新并读取拨轮负端的手动连发请求。
+ * @note 请求采用迟滞判定；实际拨弹仍由到速、电机健康和整车许可共同限制。
+ */
+static bool ShootManualBurstRequested(const Vt13ControlInput *input)
+{
+    return Vt13ManualBurst(&shoot_control, input);
+}
+
+/**
+ * @brief 判断当前发射机构是否允许驱动拨弹。
+ * @note 必须已使能、Fn 开轮、三个电机在线且两摩擦轮有限转速均达到阈值。
+ */
+static bool ShootCanFeed(void)
+{
+    return shoot_enabled && shoot_control.friction_on &&
+           !SHOOT.fric_motor[0].offline && !SHOOT.fric_motor[1].offline &&
+           !SHOOT.trigger_motor.offline &&
+           isfinite(SHOOT.FDB.fric_speed_fdb_R) && isfinite(SHOOT.FDB.fric_speed_fdb_L) &&
+           fabsf(SHOOT.FDB.fric_speed_fdb_R) >= FRIC_SPEED_LIMIT &&
+           fabsf(SHOOT.FDB.fric_speed_fdb_L) >= FRIC_SPEED_LIMIT;
+}
+#else
 static ControlInput_t shoot_input;
+#endif
 
 
 uint8_t fric_ui;
@@ -96,6 +162,34 @@ void ShootInit(void)
  */
 void ShootSetMode(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    bool manual_request, auto_request;
+    Vt13ReadControl(&shoot_input);
+    GimbalReadControlStatus(&shoot_gimbal);
+    /* 只有有效 N/S 输入与未超时的已就绪云台状态才能使能发射任务。 */
+    shoot_enabled = Vt13ControlEnabled(&shoot_input) &&
+                    Vt13StatusReady(&shoot_gimbal, HAL_GetTick());
+    /* 整车或云台不允许工作时清除开轮锁存、发射状态和电流，并停止本拍计算。 */
+    if (!shoot_enabled) {
+        ShootForceDisable();
+        return;
+    }
+    ShootUpdateFrictionSwitch(&shoot_input, shoot_enabled);
+    SHOOT.fric_flag = shoot_control.friction_on;
+    /* Fn 锁存只决定摩擦轮开关，实际到速仍由 ShootCanFeed 独立复核。 */
+    SHOOT.state = shoot_control.friction_on ? FRIC_READY : FRIC_NOT_READY;
+    manual_request = ShootManualBurstRequested(&shoot_input);
+    auto_request = Vt13AutoFireRequested(&shoot_input, &shoot_gimbal);
+    SHOOT.move_flag = 0;
+    /* 全部机构许可通过，且手动或视觉至少一路请求开火时才进入连发。 */
+    if (ShootCanFeed() && (manual_request || auto_request)) SHOOT.mode = LOAD_BURSTFIRE;
+    /* 未通过机构许可或没有开火请求时，本拍停止拨弹并清除堵转计时。 */
+    else {
+        SHOOT.mode = LOAD_STOP;
+        SHOOT.block_time = SHOOT.reverse_time = 0;
+    }
+#else
     bool fric_allowed, armed, vision_auto, ready;
     ControlInputRead(&shoot_input);
     /* 右拨杆中/下档均自动开摩擦轮，左拨杆各档位均允许开轮。 */
@@ -129,6 +223,8 @@ void ShootSetMode(void)
             SHOOT.mode = LOAD_STOP;
         }
     }
+
+#endif
 
     /* 保留原有堵转反转处理。 */
     if (SHOOT.mode == LOAD_BURSTFIRE || (SHOOT.mode == LAOD_BULLET && SHOOT.move_flag))
@@ -355,6 +451,15 @@ void ShootReference(void)
  */
 void ShootConsole(void) 
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  /* 整车或云台不允许工作时清除开轮锁存、发射状态和电流，并停止本拍计算。 */
+  if (!shoot_enabled) {
+      ShootForceDisable();
+      return;
+  }
+#endif
+
   SHOOT.fric_motor[0].set.curr= PID_calc(&SHOOT.fric_pid[0], SHOOT.FDB.fric_speed_fdb_R,SHOOT.REF.fric_speed_ref_R);
   SHOOT.fric_motor[1].set.curr= PID_calc(&SHOOT.fric_pid[1], SHOOT.FDB.fric_speed_fdb_L,SHOOT.REF.fric_speed_ref_L);
 
@@ -412,6 +517,33 @@ void ShootConsole(void)
  */
 void ShootSendCmd(void) 
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  Vt13ControlInput latest;
+  GimbalControlStatus status;
+  VisionControlInput vision;
+  Vt13ReadControl(&latest);
+  GimbalReadControlStatus(&status);
+  /* 发送前再次检查 C 档、失联和云台时效，不依赖之前计算的使能状态。 */
+  if (!Vt13ControlEnabled(&latest) || !Vt13StatusReady(&status, HAL_GetTick())) {
+      ShootForceDisable();
+  } else {
+      /* 手动请求不依赖 USB；自动请求还需最新视觉快照允许。 */
+      bool manual_request = ShootManualBurstRequested(&latest);
+      VisionReadControl(&vision);
+      /* 电机/到速许可失效或两路开火请求都撤销时，立即清零拨弹输出并取消堵转残留。 */
+      if (!ShootCanFeed() || !(manual_request ||
+          (Vt13AutoFireRequested(&latest, &status) && vision.valid && vision.fire))) {
+          SHOOT.mode = LOAD_STOP;
+          SHOOT.move_flag = 0;
+          SHOOT.block_time = SHOOT.reverse_time = 0;
+          SHOOT.REF.trigger_speed_ref = 0.0f;
+          SHOOT.trigger_motor.set.curr = 0.0f;
+          PID_clear(&SHOOT.trigger_speed_pid);
+      }
+  }
+#endif
+
   if (TRIGGER_MOTOR_TYPE == DJI_M2006)
   {
 

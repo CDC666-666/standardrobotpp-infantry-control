@@ -22,6 +22,16 @@
 
 //API
 
+/* 一次读取同一条已校验视觉命令，避免控制任务混用不同帧的字段。 */
+typedef struct {
+    bool valid, fire;
+    float yaw, pitch, yaw_vel, pitch_vel, yaw_acc, pitch_acc;
+    uint32_t update_time_ms;
+} VisionControlInput;
+
+/* 读取同帧视觉参考、开火许可和接收时间，并复核在线状态。 */
+void VisionReadControl(VisionControlInput *out);
+
 uint8_t GetUsbStatus(void);
 extern inline float GetScCmdChassisSpeed(uint8_t axis);
 extern inline float GetScCmdChassisVelocity(uint8_t axis);

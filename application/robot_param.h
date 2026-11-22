@@ -27,7 +27,7 @@
 #define UART2_ROLE_VT13 1
 #define UART2_ROLE_LEGACY 2
 #ifndef UART2_ROLE
-#define UART2_ROLE UART2_ROLE_VT13  // 当前仅接收 VT13 原始数据，不接管 DT7 车辆控制。
+#define UART2_ROLE UART2_ROLE_VT13  // 当前用 VT13 控制整车。
 #endif
 #if UART2_ROLE != UART2_ROLE_VOFA && UART2_ROLE != UART2_ROLE_VT13 && UART2_ROLE != UART2_ROLE_LEGACY
 #error "Unsupported UART2_ROLE"
@@ -40,6 +40,25 @@
 #endif
 #define VT13_ENABLE (UART2_ROLE == UART2_ROLE_VT13)
 #define VT13_BAUDRATE 921600UL
+// 车辆控制源与底层 DT7 接收类型分开配置，禁止伪造双拨杆。
+#define ROBOT_REMOTE_LEGACY 0
+#define ROBOT_REMOTE_VT13 1
+/* 未显式指定车辆控制源时，根据串口用途选择 VT13 或旧遥控。 */
+#ifndef ROBOT_REMOTE_SOURCE
+#if VT13_ENABLE
+#define ROBOT_REMOTE_SOURCE ROBOT_REMOTE_VT13
+#else
+#define ROBOT_REMOTE_SOURCE ROBOT_REMOTE_LEGACY
+#endif
+#endif
+/* 拒绝未支持的控制源，避免无意进入未定义操控路径。 */
+#if ROBOT_REMOTE_SOURCE != ROBOT_REMOTE_LEGACY && ROBOT_REMOTE_SOURCE != ROBOT_REMOTE_VT13
+#error "Unsupported ROBOT_REMOTE_SOURCE"
+#endif
+/* 选择 VT13 控车时必须同时启用其接收链路，不能只开控制逻辑。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13 && !VT13_ENABLE
+#error "VT13 vehicle control requires UART2_ROLE_VT13"
+#endif
 // 本车实测左摇杆两轴与手册相反。设为 0 可查看帧内原始顺序。
 #ifndef VT13_SWAP_LEFT_STICK_AXES
 #define VT13_SWAP_LEFT_STICK_AXES 1
@@ -122,9 +141,9 @@
 #error "Selected UART2 role cannot receive legacy board control data"
 #endif
 #endif
-// 本次 VT13 只提供原始快照；禁止把它当成已实现的 DT7 兼容控制适配器。
+// __RC_TYPE 只选择旧 USART3 接收器，车辆输入源由 ROBOT_REMOTE_SOURCE 决定。
 #if __RC_TYPE == VT13
-#error "VT13 raw receiver is not a vehicle-control adapter; keep the existing RC type"
+#error "Select VT13 using ROBOT_REMOTE_SOURCE, not __RC_TYPE"
 #endif
 
 #if (VOFA_ENABLE != 0) && (VOFA_ENABLE != 1)

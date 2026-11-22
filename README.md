@@ -29,8 +29,9 @@
 
 ## 配套套件
 
-- [本车遥控操控与键鼠停用说明](./doc/keymouse_control.md)：底盘/云台恢复遥控器操控，右中/下档开摩擦轮，仅右下档允许视觉拨弹；保留历史键鼠记录。
-- [UART2 用途切换与 VT13 原始接收](./doc/uart2_role.md)：在 `robot_param.h` 用一个宏选择 VOFA 或 VT13；当前 VT13 仅接收校验，不接管车辆。
+- [VT13 整车操控与接口](./doc/vt13_control.md)：默认 VT13 控车；C 档失能、N/S 档、Fn 开轮、拨轮连发及小陀螺松手回正，待实车验证。
+- [旧遥控操控与键鼠停用记录](./doc/keymouse_control.md)：保留 DT7 路径的操作与历史记录。
+- [UART2 用途切换与 VT13 接收](./doc/uart2_role.md)：在 `robot_param.h` 选择 VOFA、VT13 或旧板间用途。
 
 - [StandardRobot++ Tool](https://gitee.com/SMBU-POLARBEAR/Serial_Port_Assistant) 上位机调试工具，可用于可视化查看机器人状态及相关参数，便于调试。
 - [ROS2_StandardRobot++](https://gitee.com/SMBU-POLARBEAR/ROS2_StandardRobotpp) ROS2驱动包，可用于实现上位机对机器人的控制。

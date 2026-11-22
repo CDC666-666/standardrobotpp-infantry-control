@@ -37,3 +37,7 @@ application/chassis/matlab_balance/slprj/
 *.scvd
 *.iex
 *.ini
+
+# VT13 控制回归的独立工程和构建产物
+MDK-ARM/vt13-control-verification/
+tests/__pycache__/

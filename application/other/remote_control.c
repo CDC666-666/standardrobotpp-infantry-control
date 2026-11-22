@@ -42,6 +42,7 @@
 #include "detect_task.h"
 #include "robot_param.h"
 #include "communication.h"
+#include "vt13_remote.h"
 
 // 遥控器掉线时间阈值
 #define RC_LOST_TIME 100  // ms
@@ -575,6 +576,12 @@ void sbus_to_usart1(uint8_t *sbus)
   */
 inline bool GetRcOffline(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    Vt13Input input;
+    Vt13ReadInput(&input);
+    return !input.valid;
+#else
 #if __RC_TYPE == RC_DT7
 #define USE_SBUS_LOST_COUNT 0
 #else
@@ -591,6 +598,7 @@ inline bool GetRcOffline(void)
 #endif
 
 #undef USE_SBUS_LOST_COUNT
+#endif
 }
 
 void ControlInputRead(ControlInput_t *input)

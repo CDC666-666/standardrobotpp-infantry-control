@@ -3800,6 +3800,11 @@
           <GroupName>remote_control/vt13</GroupName>
           <Files>
             <File>
+              <FileName>vt13_control.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\application\remote_control\vt13\vt13_control.c</FilePath>
+            </File>
+            <File>
               <FileName>vt13_remote.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\application\remote_control\vt13\vt13_remote.c</FilePath>

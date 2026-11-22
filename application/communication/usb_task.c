@@ -90,6 +90,7 @@ static const ChassisSpeedVector_t * FDB_SPEED_VECTOR;
 static bool USB_OFFLINE = true;
 static uint32_t RECEIVE_TIME = 0;
 static uint32_t CONTINUE_RECEIVE_CNT = 0;
+static VisionControlInput vision_control;
 
 // 数据发送结构体
 // clang-format off
@@ -198,6 +199,10 @@ static void UsbSendJointStateData(void);
 /* Receive Function                                                            */
 /*******************************************************************************/
 
+/**
+ * @brief 校验视觉命令的模式和数值并发布控制快照。
+ * @note 无目标、非法模式或非有限参考均撤销视觉许可；更新期间禁止任务读到半条命令。
+ */
 static void GetCmdData(void);
 static void GetVirtualRcCtrlData(void);
 
@@ -769,9 +774,29 @@ static bool verify_crc16(const uint8_t * data, uint32_t length)
 /* Receive Function                                                            */
 /*******************************************************************************/
 
+/* 调用者持有短临界区；时间戳必须与已发布的整条命令一起更新。 */
+/**
+ * @brief 在临界区内发布一条完整视觉控制命令。
+ * @note 命令字段和对应接收时间一起更新；调用方负责持有短临界区。
+ */
+static void VisionPublishControl(void)
+{
+    vision_control.valid = ROBOT_CMD_DATA.shoot.fric_on;
+    vision_control.fire = ROBOT_CMD_DATA.shoot.fire;
+    vision_control.yaw = ROBOT_CMD_DATA.gimbal.yaw;
+    vision_control.pitch = ROBOT_CMD_DATA.gimbal.pitch;
+    vision_control.yaw_vel = ROBOT_CMD_DATA.gimbal.yaw_vel;
+    vision_control.pitch_vel = ROBOT_CMD_DATA.gimbal.pitch_vel;
+    vision_control.yaw_acc = ROBOT_CMD_DATA.gimbal.yaw_acc;
+    vision_control.pitch_acc = ROBOT_CMD_DATA.gimbal.pitch_acc;
+    vision_control.update_time_ms = RECEIVE_TIME;
+}
+
 static void GetCmdData(void)
 {
-    // CRC only checks transport integrity; reject invalid commands before any control use.
+    uint32_t key = __get_PRIMASK();
+    __disable_irq();
+    /* CRC 只证明传输完整；无目标、非法模式或非有限参考仍须撤销视觉控制许可。 */
     if (RECEIVE_VISION_TO_GIMBAL_DATA.mode == 0 ||
         RECEIVE_VISION_TO_GIMBAL_DATA.mode > 2 ||
         !isfinite(RECEIVE_VISION_TO_GIMBAL_DATA.yaw) ||
@@ -788,6 +813,8 @@ static void GetCmdData(void)
         ROBOT_CMD_DATA.gimbal.pitch_acc = 0.0f;
         ROBOT_CMD_DATA.shoot.fire = false;
         ROBOT_CMD_DATA.shoot.fric_on = false;
+        VisionPublishControl();
+        __set_PRIMASK(key);
         return;
     }
 
@@ -799,6 +826,8 @@ static void GetCmdData(void)
     ROBOT_CMD_DATA.gimbal.pitch_acc = RECEIVE_VISION_TO_GIMBAL_DATA.pitch_acc;
     ROBOT_CMD_DATA.shoot.fire = (RECEIVE_VISION_TO_GIMBAL_DATA.mode == 2);
     ROBOT_CMD_DATA.shoot.fric_on = true;
+    VisionPublishControl();
+    __set_PRIMASK(key);
 }
 
 static void GetVirtualRcCtrlData(void) { memset(&VIRTUAL_RC_CTRL, 0, sizeof(RC_ctrl_t)); }
@@ -807,10 +836,28 @@ static void GetVirtualRcCtrlData(void) { memset(&VIRTUAL_RC_CTRL, 0, sizeof(RC_c
 /* Public Function                                                             */
 /*******************************************************************************/
 
+/* 完整拷贝视觉命令及其对应接收时间，读取端再次检查时效。 */
 /**
- * @brief 获取USB连接状态
- * @return true: USB离线, false: USB在线
+ * @brief 原子读取完整视觉控制命令并复核在线状态与时效。
+ * @note 过期或 USB 离线时撤销有效和开火标志，保留副本数据用于诊断。
  */
+void VisionReadControl(VisionControlInput *out)
+{
+    uint32_t key;
+    /* 没有输出缓冲时直接退出，不进入临界区或解引用空指针。 */
+    if (out == NULL) return;
+    key = __get_PRIMASK();
+    __disable_irq();
+    *out = vision_control;
+    /* 已发布命令还需通过 USB 在线与接收时效检查，旧目标不能持续保持许可。 */
+    out->valid = out->valid && !USB_OFFLINE &&
+                 HAL_GetTick() - out->update_time_ms <= USB_OFFLINE_THRESHOLD;
+    /* 任何有效性条件失效时，同时撤销开火许可。 */
+    out->fire = out->valid && out->fire;
+    __set_PRIMASK(key);
+}
+
+/* true 为 USB 离线，false 为在线。 */
 inline uint8_t GetUsbStatus(void) { return (uint8_t)USB_OFFLINE; }
 
 /**

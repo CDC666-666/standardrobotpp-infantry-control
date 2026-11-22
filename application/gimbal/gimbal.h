@@ -21,11 +21,14 @@
 #include "robot_param.h"
 #include "struct_typedef.h"
 #include "stdbool.h"
+#include "vt13_control.h"
 
 // API
 
 extern inline uint8_t GetGimbalStatus(void);
 extern bool GimbalAllowsShoot(void);
+/* 原子读取云台工作状态，失能或快照超时会撤销外部许可。 */
+void GimbalReadControlStatus(GimbalControlStatus *out);
 extern inline uint32_t GetGimbalDuration(void);
 extern inline float GetGimbalSpeed(uint8_t axis);
 extern inline float GetGimbalVelocity(uint8_t axis);

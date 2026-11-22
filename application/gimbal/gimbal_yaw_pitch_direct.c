@@ -27,13 +27,51 @@
 #include "yaw_auto_lqr_eso_controller.h"
 #include "vofa_gimbal.h"
 #include <float.h>
+#include <string.h>
 #if (GIMBAL_TYPE == GIMBAL_YAW_PITCH_DIRECT)
 Gimbal_s gimbal_direct;
 PID_t gimbal_direct_pid;
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+static Vt13ControlInput gimbal_input;
+static VisionControlInput gimbal_vision;
+static Vt13InitControl gimbal_init_control;
+static GimbalControlStatus gimbal_control_status;
+
+/**
+ * @brief 原子读取云台发布的完整工作状态副本。
+ * @note 读取后复核遥控和时效；失能或状态超时立即撤销外部工作许可。
+ */
+void GimbalReadControlStatus(GimbalControlStatus *out)
+{
+    Vt13ControlInput input;
+    uint32_t key;
+    /* 调用方未提供快照空间时不进行复制。 */
+    if (out == NULL) return;
+    key = __get_PRIMASK();
+    __disable_irq();
+    *out = gimbal_control_status;
+    __set_PRIMASK(key);
+    Vt13ReadControl(&input);
+    /* 读取时发现 C 档、失联或发布状态超时，立即撤销外部工作许可。 */
+    if (!Vt13ControlEnabled(&input) ||
+        HAL_GetTick() - out->update_time_ms >= VT13_CONTROL_STATUS_TIMEOUT_MS) {
+        out->ready = out->auto_active = out->vision_fire = false;
+    }
+}
+#endif
+
 /* 输入有效性由发射机构独立检查，此处仅提供云台工作模式许可。 */
 bool GimbalAllowsShoot(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    GimbalControlStatus status;
+    GimbalReadControlStatus(&status);
+    return Vt13StatusReady(&status, HAL_GetTick());
+#else
     return gimbal_direct.mode == GIMBAL_IMU || gimbal_direct.mode == GIMBAL_AUTO_AIM;
+#endif
 }
 
 static YawAutoLqrEso_t yaw_auto_ctrl;                 // 开源模块的 ESO、积分和上次力矩等内部状态。
@@ -76,6 +114,51 @@ static float yaw_mode_usb_offline, yaw_mode_vision_request;
 #endif
 
 /**
+ * @brief 读取当前控制周期采用的视觉目标角。
+ * @note VT13 使用本拍完整快照，旧遥控路径保留原接口。
+ */
+static float GimbalVisionAngle(uint8_t axis)
+{
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    /* 调用方只传 yaw/pitch 轴，分别取本拍快照中对应轴的参考。 */
+    return axis == AX_YAW ? gimbal_vision.yaw : gimbal_vision.pitch;
+#else
+    return GetScCmdGimbalAngle(axis);
+#endif
+}
+
+/**
+ * @brief 读取与本拍目标角对应的视觉规划角速度。
+ * @note 与位置、加速度共用一份完整快照，避免跨帧混用。
+ */
+static float GimbalVisionVelocity(uint8_t axis)
+{
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    /* 调用方只传 yaw/pitch 轴，分别取本拍快照中对应轴的参考。 */
+    return axis == AX_YAW ? gimbal_vision.yaw_vel : gimbal_vision.pitch_vel;
+#else
+    return GetScCmdGimbalVelocity(axis);
+#endif
+}
+
+/**
+ * @brief 读取与本拍目标角对应的视觉规划角加速度。
+ * @note 仅切换取值来源，沿用原有控制参数。
+ */
+static float GimbalVisionAcceleration(uint8_t axis)
+{
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    /* 调用方只传 yaw/pitch 轴，分别取本拍快照中对应轴的参考。 */
+    return axis == AX_YAW ? gimbal_vision.yaw_acc : gimbal_vision.pitch_acc;
+#else
+    return GetScCmdGimbalAcceleration(axis);
+#endif
+}
+
+/**
  * @brief 检查 yaw 控制输入或输出是否为有限浮点数。
  * @param value 待检查的数值。
  * @return true 为有限值；false 为 NaN 或正负无穷。
@@ -115,8 +198,8 @@ static void GimbalAutoYawConsole(void)
     //fp32 omega = gimbal_direct.yaw.direction * gimbal_direct.yaw.fdb.vel;//gimbal_direct.feedback_vel.yaw; // IMU 世界 yaw 角速度，rad/s。
     fp32 tau_meas = gimbal_direct.yaw.direction * gimbal_direct.yaw.fdb.tor; // 电机实测力矩映射到控制器正方向，N·m。
     fp32 chassis_wz = ChassisGetSpeedWz(); // 底盘角速度，供本车额外力矩补偿使用。
-    fp32 plan_vel = GetScCmdGimbalVelocity(AX_YAW); // 上位机规划 yaw 速度，rad/s。
-    fp32 plan_acc = GetScCmdGimbalAcceleration(AX_YAW); // 上位机规划 yaw 加速度，rad/s²。
+    fp32 plan_vel = GimbalVisionVelocity(AX_YAW); // 上位机规划 yaw 速度，rad/s。
+    fp32 plan_acc = GimbalVisionAcceleration(AX_YAW); // 上位机规划 yaw 加速度，rad/s²。
     fp32 dt_s;                       // 送入控制器的计算周期，s。
     fp32 tau_previous;               // 上一周期实际下发的控制器正方向力矩，N·m。
     fp32 tau_world;                  // 叠加底盘补偿并限幅后的控制器正方向力矩，N·m。
@@ -231,7 +314,11 @@ bool Gimbal_direct_init_judge (void)
 
   if (((delta_yaw < 0.03f && (-0.03f) < delta_yaw) &&
        (delta_pitch < 0.03f && (-0.03f) < delta_pitch))
-       || gimbal_direct.init_timer >= GIMBAL_INIT_TIME)
+/* 仅旧遥控路径保留原初始化判定和计时，VT13 由独立状态机负责。 */
+#if ROBOT_REMOTE_SOURCE != ROBOT_REMOTE_VT13
+       || gimbal_direct.init_timer >= GIMBAL_INIT_TIME
+#endif
+       )
   {
     return true;
   }
@@ -291,10 +378,12 @@ bool Gimbal_direct_init_judge (void)
  */
 inline float GetGimbalDeltaYawMid(void)
 {
-  return loop_fp32_constrain(
-      gimbal_direct.yaw.direction * (gimbal_direct.yaw.fdb.pos - GIMBAL_DIRECT_YAW_MID),
-      -M_PI,
-      M_PI);
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  /* 无效编码器值不进入角度折返，返回占位角并由状态许可阻止运动。 */
+  if (!GimbalAutoYawFinite(gimbal_direct.yaw.fdb.pos)) return 0.0f;
+#endif
+  return loop_fp32_constrain(gimbal_direct.yaw.direction * (gimbal_direct.yaw.fdb.pos - GIMBAL_DIRECT_YAW_MID), -M_PI, M_PI);
 }
 
 /* ---------------- GetGimbalInitJudgeReturn -------------------- */
@@ -316,6 +405,12 @@ inline bool GetGimbalInitJudgeReturn(void)
  */
 inline float CmdGimbalJointState(uint8_t axis)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  /* 先拒绝非有限编码器值，不能把无穷送入反复加减 2pi 的折返循环。 */
+  if ((axis == AX_PITCH && !GimbalAutoYawFinite(gimbal_direct.pitch.fdb.pos)) ||
+      (axis == AX_YAW && !GimbalAutoYawFinite(gimbal_direct.yaw.fdb.pos))) return 0.0f;
+#endif
   if ( axis == AX_PITCH )
   {
     return loop_fp32_constrain(gimbal_direct.pitch.direction * (gimbal_direct.pitch.fdb.pos - GIMBAL_DIRECT_PITCH_MID),-M_PI,M_PI);
@@ -331,6 +426,51 @@ inline float CmdGimbalJointState(uint8_t axis)
 }
 
 
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+/**
+ * @brief 检查云台电机、惯性传感器以及角度和速度反馈。
+ * @note 编码器必须先通过有限值检查，才能进入关节角计算。
+ */
+static bool GimbalFeedbackValid(void)
+{
+    return !gimbal_direct.yaw.offline && !gimbal_direct.pitch.offline &&
+           !toe_is_error(BOARD_GYRO_TOE) && !toe_is_error(BOARD_ACCEL_TOE) &&
+           GimbalAutoYawFinite(gimbal_direct.yaw.fdb.pos) &&
+           GimbalAutoYawFinite(gimbal_direct.pitch.fdb.pos) &&
+           GimbalAutoYawFinite(gimbal_direct.feedback_pos.yaw) &&
+           GimbalAutoYawFinite(gimbal_direct.feedback_pos.pitch) &&
+           GimbalAutoYawFinite(gimbal_direct.feedback_vel.yaw) &&
+           GimbalAutoYawFinite(gimbal_direct.feedback_vel.pitch) &&
+           GimbalAutoYawFinite(CmdGimbalJointState(AX_YAW)) &&
+           GimbalAutoYawFinite(CmdGimbalJointState(AX_PITCH));
+}
+
+/**
+ * @brief 捕获当前反馈角，作为进入手动模式时的初始参考。
+ * @note 用于初始化结束或退出自瞄，防止跳回上一段手动模式的旧目标。
+ */
+static void GimbalCaptureManualReference(void)
+{
+    gimbal_direct.reference = gimbal_direct.feedback_pos;
+}
+
+/**
+ * @brief 根据本拍输入和反馈推进初始化，并同步调试字段。
+ * @note 计时统一使用毫秒，只有实际回中才能设置完成标志。
+ */
+static void GimbalUpdateInitState(void)
+{
+    Vt13UpdateInit(&gimbal_init_control, Vt13ControlEnabled(&gimbal_input),
+                   GimbalFeedbackValid(), CmdGimbalJointState(AX_YAW),
+                   CmdGimbalJointState(AX_PITCH), HAL_GetTick(), GIMBAL_INIT_TIME);
+    gimbal_direct.init_continue = gimbal_init_control.state == VT13_INIT_READY;
+    gimbal_direct.init_start_time = gimbal_init_control.start_ms;
+    gimbal_direct.init_timer = gimbal_init_control.state == VT13_INIT_RUNNING
+                              ? HAL_GetTick() - gimbal_init_control.start_ms : 0U;
+}
+#endif
+
 /*-------------------- Init --------------------*/
 /**
  * @brief          初始化
@@ -339,6 +479,11 @@ inline float CmdGimbalJointState(uint8_t axis)
  */
 void GimbalInit(void) 
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+   memset(&gimbal_init_control, 0, sizeof(gimbal_init_control));
+   memset(&gimbal_control_status, 0, sizeof(gimbal_control_status));
+#endif
    //step0 初始化控制器
    YawAutoLqrEso_Init(&yaw_auto_ctrl);
    GimbalAutoYawReset();
@@ -396,6 +541,36 @@ void GimbalInit(void)
  */
 void GimbalSetMode(void)
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  Vt13ReadControl(&gimbal_input);
+  VisionReadControl(&gimbal_vision);
+  GimbalUpdateInitState();
+  /* 输入失联优先进入遥控错误模式，禁止沿用断连前的模式。 */
+  if (!gimbal_input.valid) gimbal_direct.mode = GIMBAL_DBUS_ERR;
+  /* C 档或初始化失败保持无力，失败需经过失能后才能重新初始化。 */
+  else if (!Vt13ControlEnabled(&gimbal_input) || gimbal_init_control.state == VT13_INIT_FAILED)
+    gimbal_direct.mode = GIMBAL_ZERO_FORCE;
+  /* 初始化未完成时只允许云台回中，不允许视觉提前接管。 */
+  else if (gimbal_init_control.state == VT13_INIT_RUNNING) gimbal_direct.mode = GIMBAL_INIT;
+  /* 仅 S 档且当前视觉命令有效时进入自瞄。 */
+  else if (gimbal_input.mode == VT13_MODE_S && gimbal_vision.valid)
+    gimbal_direct.mode = GIMBAL_AUTO_AIM;
+  /* N 档或 S 档无目标时回到摇杆手动控制。 */
+  else gimbal_direct.mode = GIMBAL_IMU;
+
+  /* 进入手动模式的首拍以当前反馈重新建立参考，避免退出自瞄时跳回旧角度。 */
+  if (gimbal_direct.mode == GIMBAL_IMU && gimbal_direct.last_mode != GIMBAL_IMU)
+    GimbalCaptureManualReference();
+  /* 失能时清除 PID 与自瞄控制历史，恢复后不携带旧输出。 */
+  if (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR) {
+    PID_clear(&gimbal_direct_pid.yaw_angle);
+    PID_clear(&gimbal_direct_pid.yaw_velocity);
+    PID_clear(&gimbal_direct_pid.pitch_angle);
+    PID_clear(&gimbal_direct_pid.pitch_velocity);
+    GimbalAutoYawReset();
+  }
+#else
   uint8_t usb_offline = GetUsbStatus();
   bool vision_request = GetScCmdFricOn();
 #if VOFA_ENABLE
@@ -432,6 +607,7 @@ void GimbalSetMode(void)
           gimbal_direct.mode = GIMBAL_AUTO_AIM;
    }    
   }
+#endif
 }
 
 /*-------------------- Observe --------------------*/
@@ -455,6 +631,8 @@ void GimbalObserver(void)
 
   Angle_solution();
 
+/* 仅旧遥控路径保留原初始化判定和计时，VT13 由独立状态机负责。 */
+  #if ROBOT_REMOTE_SOURCE != ROBOT_REMOTE_VT13
   //初始化校准模式时钟更新
   if (gimbal_direct.mode == GIMBAL_INIT){
     if (gimbal_direct.last_mode != GIMBAL_INIT){
@@ -470,6 +648,7 @@ void GimbalObserver(void)
     gimbal_direct.mode_before_rc_err=gimbal_direct.last_mode;
   }
 
+  #endif
   gimbal_direct.last_mode=gimbal_direct.mode; //上一运行模式更新
 }
 
@@ -482,6 +661,14 @@ void GimbalObserver(void)
  */
 void GimbalReference(void) 
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  /* 反馈异常时提前退出参考或控制计算，不让非有限值进入角度折返和 PID。 */
+  if (!GimbalFeedbackValid()) {
+    gimbal_direct.reference.pitch = gimbal_direct.reference.yaw = 0.0f;
+    return;
+  }
+#endif
   switch (gimbal_direct.mode){
       case GIMBAL_ZERO_FORCE:
       case GIMBAL_DBUS_ERR:
@@ -505,18 +692,29 @@ void GimbalReference(void)
           gimbal_direct.reference.yaw=gimbal_direct.feedback_pos.yaw;
         }
         else {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+          gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch - fp32_deadline(gimbal_input.pitch_input * 660.0f, REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
+          gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw - fp32_deadline(gimbal_input.yaw_input * 660.0f, REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, -M_PI, M_PI);
+#else
           // 沿用提交版的摇杆增量控制，保留俯仰限位。
           gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch - fp32_deadline(gimbal_direct.rc->rc.ch[1], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
           gimbal_direct.reference.yaw = loop_fp32_constrain(gimbal_direct.reference.yaw - fp32_deadline(gimbal_direct.rc->rc.ch[0], REMOTE_CONTROLLER_MIN_DEADLINE, REMOTE_CONTROLLER_MAX_DEADLINE) / REMOTE_CONTROLLER_SENSITIVITY, -M_PI, M_PI);
+#endif
         }
         break;
       }
 
       case GIMBAL_AUTO_AIM:{
-        fp32 yaw_cmd_abs = GetScCmdGimbalAngle(AX_YAW);
+        fp32 yaw_cmd_abs = GimbalVisionAngle(AX_YAW);
         fp32 yaw_now = gimbal_direct.feedback_pos.yaw;
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+        gimbal_direct.reference.yaw = yaw_now + Vt13WrapAngle(yaw_cmd_abs - yaw_now);
+#else
         gimbal_direct.reference.yaw = yaw_now + loop_fp32_constrain(yaw_cmd_abs - yaw_now, -M_PI, M_PI);
-        gimbal_direct.reference.pitch = fp32_constrain( -GetScCmdGimbalAngle(AX_PITCH),GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
+#endif
+        gimbal_direct.reference.pitch = fp32_constrain( -GimbalVisionAngle(AX_PITCH),GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu,GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
         break;
       }
   }
@@ -531,6 +729,20 @@ void GimbalReference(void)
  */
 void GimbalConsole(void) 
 {
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+  /* 无效反馈不能进入 PID，防止恢复后沿用被 NaN 污染的积分和微分历史。 */
+  /* 反馈异常时提前退出参考或控制计算，不让非有限值进入角度折返和 PID。 */
+  if (!GimbalFeedbackValid()) {
+    gimbal_direct.pitch.set.curr = 0.0f;
+    PID_clear(&gimbal_direct_pid.yaw_angle);
+    PID_clear(&gimbal_direct_pid.yaw_velocity);
+    PID_clear(&gimbal_direct_pid.pitch_angle);
+    PID_clear(&gimbal_direct_pid.pitch_velocity);
+    GimbalAutoYawReset();
+    return;
+  }
+#endif
   if (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR || gimbal_direct.yaw.offline || gimbal_direct.pitch.offline)
   {
     gimbal_direct.pitch.set.curr=0; 
@@ -546,8 +758,8 @@ void GimbalConsole(void)
     if (gimbal_direct.mode == GIMBAL_AUTO_AIM) {
         //pitch自瞄相关
         if (!gimbal_direct.pitch.offline) {
-            fp32 plan_pitch_acc = fp32_constrain(GetScCmdGimbalAcceleration(AX_PITCH), -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC, MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC);
-            plan_pitch_vel_ff = fp32_constrain(GetScCmdGimbalVelocity(AX_PITCH), -MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF, MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF);
+            fp32 plan_pitch_acc = fp32_constrain(GimbalVisionAcceleration(AX_PITCH), -MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC, MAX_GIMBAL_DIRECT_PITCH_PLAN_ACC);
+            plan_pitch_vel_ff = fp32_constrain(GimbalVisionVelocity(AX_PITCH), -MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF, MAX_GIMBAL_DIRECT_PITCH_PLAN_VEL_FF);
             if (plan_pitch_acc != plan_pitch_acc) {
                 plan_pitch_acc = 0.0f;
                 plan_pitch_acc_filtered = 0.0f;
@@ -600,27 +812,65 @@ void GimbalConsole(void)
  * @param[in]      none
  * @retval         none
  */
-void GimbalSendCmd(void) 
+void GimbalSendCmd(void)
 {
     bool yaw_stop;
-    // if (gimbal_direct.pitch.fdb.state == DM_STATE_DISABLE) {
-    //     DmEnable(&gimbal_direct.pitch);
-    // }
-    if (gimbal_direct.yaw.fdb.state == DM_STATE_DISABLE) {
-        DmEnable(&gimbal_direct.yaw);
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    Vt13ControlInput latest;
+    GimbalControlStatus status;
+    uint32_t key;
+    memset(&status, 0, sizeof(status));
+    Vt13ReadControl(&latest);
+    /* 发送前若发现 C 档或失联，清除初始化许可并进入对应无力模式。 */
+    if (!Vt13ControlEnabled(&latest)) {
+        gimbal_init_control.state = VT13_INIT_DISABLED;
+        gimbal_direct.init_continue = false;
+        /* 有效 C 档对应无力；输入无效对应遥控错误，两者都禁止输出。 */
+        gimbal_direct.mode = latest.valid ? GIMBAL_ZERO_FORCE : GIMBAL_DBUS_ERR;
     }
-
+#endif
+    /* 无力、遥控错误、电机离线或自瞄反馈失效均要求停止输出。 */
     yaw_stop = (gimbal_direct.mode == GIMBAL_ZERO_FORCE || gimbal_direct.mode == GIMBAL_DBUS_ERR ||
-        gimbal_direct.yaw.offline ||
+        gimbal_direct.yaw.offline || gimbal_direct.pitch.offline ||
         (gimbal_direct.mode == GIMBAL_AUTO_AIM && !yaw_auto_feedback_valid));
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    /* VT13 还复核最新输入、反馈、初始化故障和档位一致性，防止发送旧模式电流。 */
+    yaw_stop = yaw_stop || !Vt13ControlEnabled(&latest) || !GimbalFeedbackValid() ||
+               gimbal_init_control.state == VT13_INIT_FAILED ||
+               latest.mode != gimbal_input.mode;
+#endif
+
+    /* 最终停机条件满足时同时清零 pitch 电流与 yaw 力矩，并发送零力矩帧。 */
     if (yaw_stop) {
+        gimbal_direct.pitch.set.curr = 0.0f;
+        gimbal_direct.yaw.set.tor = 0.0f;
         DmMitStop(&gimbal_direct.yaw);
-        //DmMitStop(&gimbal_direct.pitch);
-    } else {
+    } else { /* 许可有效时才进入使能检查和正常力矩发送。 */
+        /* 只有已允许工作的路径才自动使能 yaw，失能分支不能重新开启电机。 */
+        if (gimbal_direct.yaw.fdb.state == DM_STATE_DISABLE) DmEnable(&gimbal_direct.yaw);
         DmMitCtrlTorque(&gimbal_direct.yaw);
     }
+    CanCmdDjiMotor(GIMBAL_CAN, GIMBAL_STDID, 0, 0, gimbal_direct.pitch.set.curr, 0);
+    
+/* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
+#if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
+    status.init_state = gimbal_init_control.state;
+    status.feedback_valid = GimbalFeedbackValid();
+    /* 只有实际允许输出且初始化完成时，才向底盘、发射发布工作许可。 */
+    status.ready = !yaw_stop && status.init_state == VT13_INIT_READY;
+    status.auto_active = status.ready && gimbal_direct.mode == GIMBAL_AUTO_AIM;
+    status.vision_fire = status.auto_active && gimbal_vision.valid && gimbal_vision.fire;
+    status.yaw_world = gimbal_direct.feedback_pos.yaw;
+    status.yaw_joint = CmdGimbalJointState(AX_YAW);
+    status.update_time_ms = HAL_GetTick();
+    key = __get_PRIMASK();
+    __disable_irq();
+    gimbal_control_status = status;
+    __set_PRIMASK(key);
+#endif
 
-  CanCmdDjiMotor(GIMBAL_CAN,GIMBAL_STDID,0,0,gimbal_direct.pitch.set.curr,0);
 #if VOFA_ENABLE
   vofa_gimbal_update(&gimbal_direct, yaw_stop ? 0.0f : gimbal_direct.yaw.set.tor,
       yaw_auto_feedback_valid, yaw_auto_output.theta_ref_rad, yaw_auto_theta_unwrapped,
