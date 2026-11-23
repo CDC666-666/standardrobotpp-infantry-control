@@ -106,6 +106,8 @@ static VisionControlInput vision;
 void Vt13ReadInput(Vt13Input *out) { *out=raw; }
 /* 读取用例设置的视觉命令，替代 USB 接收。 */
 void VisionReadControl(VisionControlInput *out) { *out=vision; }
+/* 沿用固件原始 fire 接口，视觉有效性由完整快照另外检查。 */
+bool GetScCmdFire(void) { return vision.fire; }
 /* 实际云台用自己的状态发布器，其余模块使用状态替身。 */
 #ifndef TEST_GIMBAL
 static GimbalControlStatus fake_status;
@@ -269,10 +271,22 @@ int main(void) {
     vision.valid=vision.fire=true;
     step();assert(SHOOT.mode==LOAD_STOP);
     raw.mode_switch=2;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
-    fake_status.vision_fire=false;step();assert(SHOOT.mode==LOAD_STOP);
+    /* S 档有效目标自动开轮；视觉停火不能被拨轮覆盖。 */
+    shoot_control.friction_on=false;
+    step();assert(SHOOT.fric_flag&&SHOOT.state==FRIC_READY);
+    assert(SHOOT.mode==LOAD_BURSTFIRE&&!shoot_control.friction_on);
+    raw.wheel=364;vision.fire=false;fake_status.vision_fire=false;
+    step();assert(SHOOT.mode==LOAD_STOP&&SHOOT.state==FRIC_READY);
+    vision.fire=true;fake_status.vision_fire=true;
+    SHOOT.trigger_motor.offline=true;step();assert(SHOOT.mode==LOAD_STOP);
+    SHOOT.trigger_motor.offline=false;
+    SHOOT.FDB.fric_speed_fdb_L=100;step();assert(SHOOT.mode==LOAD_STOP);
+    SHOOT.FDB.fric_speed_fdb_L=600;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
     fake_status.vision_fire=true;ShootSetMode();ShootReference();ShootConsole();
     vision.valid=false;ShootSendCmd();assert(sent[TRIGGER_MOTOR_CAN][1][1]==0);
     raw.mode_switch=1;raw.wheel=364;fake_status.auto_active=false;step();
+    assert(SHOOT.mode==LOAD_STOP&&!SHOOT.fric_flag);
+    raw.function_left=false;step();raw.function_left=true;step();
     assert(SHOOT.mode==LOAD_BURSTFIRE);
     SHOOT.FDB.fric_speed_fdb_L=100;step();assert(sent[TRIGGER_MOTOR_CAN][1][1]==0);
     SHOOT.FDB.fric_speed_fdb_L=600;step();

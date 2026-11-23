@@ -94,11 +94,11 @@ static bool ShootManualBurstRequested(const Vt13ControlInput *input)
 
 /**
  * @brief 判断当前发射机构是否允许驱动拨弹。
- * @note 必须已使能、Fn 开轮、三个电机在线且两摩擦轮有限转速均达到阈值。
+ * @note 必须已使能、摩擦轮已开启、三个电机在线且两摩擦轮有限转速均达到阈值。
  */
 static bool ShootCanFeed(void)
 {
-    return shoot_enabled && shoot_control.friction_on &&
+    return shoot_enabled && SHOOT.fric_flag &&
            !SHOOT.fric_motor[0].offline && !SHOOT.fric_motor[1].offline &&
            !SHOOT.trigger_motor.offline &&
            isfinite(SHOOT.FDB.fric_speed_fdb_R) && isfinite(SHOOT.FDB.fric_speed_fdb_L) &&
@@ -164,7 +164,7 @@ void ShootSetMode(void)
 {
 /* VT13 控制源使用新映射与安全门控；其他控制源保留旧路径。 */
 #if ROBOT_REMOTE_SOURCE == ROBOT_REMOTE_VT13
-    bool manual_request, auto_request;
+    bool manual_request, auto_request, auto_target;
     Vt13ReadControl(&shoot_input);
     GimbalReadControlStatus(&shoot_gimbal);
     /* 只有有效 N/S 输入与未超时的已就绪云台状态才能使能发射任务。 */
@@ -176,11 +176,14 @@ void ShootSetMode(void)
         return;
     }
     ShootUpdateFrictionSwitch(&shoot_input, shoot_enabled);
-    SHOOT.fric_flag = shoot_control.friction_on;
-    /* Fn 锁存只决定摩擦轮开关，实际到速仍由 ShootCanFeed 独立复核。 */
-    SHOOT.state = shoot_control.friction_on ? FRIC_READY : FRIC_NOT_READY;
+    auto_target = shoot_input.mode == VT13_MODE_S && shoot_gimbal.auto_active;
+    /* S 档有效自瞄沿用前馈微调版自动开轮，其余情况仍由 Fn 锁存控制。 */
+    SHOOT.fric_flag = auto_target || shoot_control.friction_on;
+    SHOOT.state = SHOOT.fric_flag ? FRIC_READY : FRIC_NOT_READY;
     manual_request = ShootManualBurstRequested(&shoot_input);
-    auto_request = Vt13AutoFireRequested(&shoot_input, &shoot_gimbal);
+    auto_request = Vt13AutoFireRequested(&shoot_input, &shoot_gimbal) && GetScCmdFire();
+    /* 有效自瞄时仅由视觉 fire 决定拨弹，fire 撤销后拨轮不能续发。 */
+    if (auto_target) manual_request = false;
     SHOOT.move_flag = 0;
     /* 全部机构许可通过，且手动或视觉至少一路请求开火时才进入连发。 */
     if (ShootCanFeed() && (manual_request || auto_request)) SHOOT.mode = LOAD_BURSTFIRE;
@@ -530,6 +533,8 @@ void ShootSendCmd(void)
   } else {
       /* 手动请求不依赖 USB；自动请求还需最新视觉快照允许。 */
       bool manual_request = ShootManualBurstRequested(&latest);
+      /* 与模式选择一致：S 档有效自瞄只接受视觉开火许可。 */
+      if (latest.mode == VT13_MODE_S && status.auto_active) manual_request = false;
       VisionReadControl(&vision);
       /* 电机/到速许可失效或两路开火请求都撤销时，立即清零拨弹输出并取消堵转残留。 */
       if (!ShootCanFeed() || !(manual_request ||

@@ -211,8 +211,8 @@
 #define GIMBAL_AUTO_YAW_B_NMS_RAD (0.012f)// 原接入值 0.3f
 #define GIMBAL_AUTO_YAW_COULOMB_NM (0.35f)// 运动库仑摩擦候选；原值 0.0f
 #define GIMBAL_AUTO_YAW_COULOMB_SMOOTH_RAD_S (0.1f)// tanh 过零平滑试验初值，未辨识；原值 0.0f
-#define GIMBAL_AUTO_YAW_K_THETA (12.1659021f)// 慢跟随对照：12 -> 8；回退值 12.0f
-#define GIMBAL_AUTO_YAW_K_OMEGA (0.7029079262f)// 开源脚本标注的固件当前速度反馈增益3.4
+#define GIMBAL_AUTO_YAW_K_THETA (8.1659021f)// 慢跟随对照：12 -> 8；回退值 12.0f
+#define GIMBAL_AUTO_YAW_K_OMEGA (0.3029079262f)// 开源脚本标注的固件当前速度反馈增益3.4
 #define GIMBAL_AUTO_YAW_ESO_BANDWIDTH_RAD_S (20.0f)
 // 模型已有初步命令等效辨识，ESO 扰动补偿已启用；DM 实际力矩与实车补偿效果仍待验证。
 #define GIMBAL_AUTO_YAW_ESO_COMP_ENABLE (1U)
