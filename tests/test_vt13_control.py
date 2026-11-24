@@ -17,7 +17,18 @@ class Control(c.Structure):
     _fields_ = [("valid", c.c_bool), ("mode", c.c_int)] + [
         (name, c.c_float) for name in ("move_x", "move_y", "yaw_input", "pitch_input", "wheel")
     ] + [("fn_down", c.c_bool), ("spin_down", c.c_bool),
-         ("sequence", c.c_uint32), ("update_time_ms", c.c_uint32)]
+         ("sequence", c.c_uint32), ("update_time_ms", c.c_uint32),
+         ("mouse_x", c.c_int16), ("mouse_y", c.c_int16), ("keyboard_move", c.c_bool),
+         ("mouse_left", c.c_bool), ("mouse_right", c.c_bool)]
+
+
+class KeyboardMotion(c.Structure):
+    _fields_ = [("vx", c.c_float), ("vy", c.c_float),
+                ("update_time_ms", c.c_uint32), ("active", c.c_bool)]
+
+
+class MouseControl(c.Structure):
+    _fields_ = [("sequence", c.c_uint32), ("seen", c.c_bool)]
 
 
 class Init(c.Structure):
@@ -72,7 +83,9 @@ unsigned test_size(unsigned type) {
         case 1: return sizeof(Vt13InitControl);
         case 2: return sizeof(GimbalControlStatus);
         case 3: return sizeof(Vt13SpinControl);
-        default: return sizeof(Vt13ShootControl);
+        case 4: return sizeof(Vt13ShootControl);
+        case 5: return sizeof(Vt13KeyboardMotion);
+        default: return sizeof(Vt13MouseControl);
     }
 }
 ''', encoding="utf-8")
@@ -87,6 +100,11 @@ unsigned test_size(unsigned type) {
             "Vt13MapControl": ([c.POINTER(Input), c.POINTER(Control)], None),
             "Vt13ReadControl": ([c.POINTER(Control)], None),
             "Vt13ControlEnabled": ([c.POINTER(Control)], c.c_bool),
+            "Vt13AutoAimRequested": ([c.POINTER(Control)], c.c_bool),
+            "Vt13TakeMouseDelta": ([c.POINTER(MouseControl), c.POINTER(Control),
+                                    c.POINTER(c.c_int16), c.POINTER(c.c_int16)], c.c_bool),
+            "Vt13UpdateKeyboardMotion": ([c.POINTER(KeyboardMotion), c.POINTER(Control),
+                                           c.c_uint32, c.c_float, c.c_float, c.c_float], None),
             "Vt13StatusReady": ([c.POINTER(Status), c.c_uint32], c.c_bool),
             "Vt13WrapAngle": ([c.c_float], c.c_float),
             "Vt13ChassisHeading": ([c.POINTER(Status)], c.c_float),
@@ -103,7 +121,7 @@ unsigned test_size(unsigned type) {
         for name, (args, result) in signatures.items():
             fn = getattr(cls.lib, name)
             fn.argtypes, fn.restype = args, result
-        for index, structure in enumerate((Control, Init, Status, Spin, Shoot)):
+        for index, structure in enumerate((Control, Init, Status, Spin, Shoot, KeyboardMotion, MouseControl)):
             assert cls.lib.test_size(index) == c.sizeof(structure)
 
     @classmethod
@@ -144,7 +162,8 @@ unsigned test_size(unsigned type) {
         self.assertFalse(value.fn_down or value.spin_down)
 
     def test_c_switch_masks_controls_and_invalid_modes_fail_closed(self):
-        raw = Input(valid=True, mode_switch=0, function_left=True, function_right=True, trigger=True)
+        raw = Input(valid=True, mode_switch=0, function_left=True, function_right=True, trigger=True,
+                    keyboard=31, mouse_left=1, mouse_right=1, mouse_x=32767, mouse_y=-32768)
         raw.normalized[:] = (1, 1, 1, 1)
         value = Control()
         for mode in (0, 3):
@@ -153,6 +172,8 @@ unsigned test_size(unsigned type) {
             self.assertFalse(self.lib.Vt13ControlEnabled(c.byref(value)))
             self.assertEqual((value.move_x, value.move_y, value.wheel), (0, 0, 0))
             self.assertFalse(value.fn_down or value.spin_down)
+            self.assertFalse(value.keyboard_move or value.mouse_left or value.mouse_right)
+            self.assertEqual((value.mouse_x, value.mouse_y), (0, 0))
 
     def test_spin_uses_trigger_not_right_function_key(self):
         """经过实际协议解码，确认右功能键和右上扳机不会混用。"""
@@ -160,7 +181,7 @@ unsigned test_size(unsigned type) {
             for right_function in (False, True):
                 for trigger in (False, True):
                     self.lib.test_init()
-                    wire = frame(mode=mode, right=int(right_function), trigger=int(trigger))
+                    wire = frame(mode=mode, right=int(right_function), trigger=int(trigger), keyboard=0)
                     self.lib.test_feed(wire, len(wire), 1000)
                     value = Control()
                     self.lib.Vt13ReadControl(c.byref(value))
@@ -356,15 +377,143 @@ unsigned test_size(unsigned type) {
         self.input.mode, self.input.wheel = 0, -1
         self.assertFalse(self.lib.Vt13ManualBurst(c.byref(self.shoot), c.byref(self.input)))
 
-    def test_vision_fire_requires_s_target_and_fire_permission(self):
+    def test_vision_fire_requires_mode_right_key_left_key_and_permission(self):
         for mode in (0, 1, 2):
             for valid in (False, True):
                 for target in (False, True):
                     for fire in (False, True):
-                        self.input.mode, self.input.valid = mode, valid
-                        self.status.auto_active, self.status.vision_fire = target, fire
-                        result = self.lib.Vt13AutoFireRequested(c.byref(self.input), c.byref(self.status))
-                        self.assertEqual(result, mode == 2 and valid and target and fire)
+                        for left in (False, True):
+                            for right in (False, True):
+                                self.input.mode, self.input.valid = mode, valid
+                                self.input.mouse_left, self.input.mouse_right = left, right
+                                self.status.auto_active, self.status.vision_fire = target, fire
+                                result = self.lib.Vt13AutoFireRequested(c.byref(self.input), c.byref(self.status))
+                                self.assertEqual(result, valid and (mode == 2 or (mode == 1 and right)) and target and fire and left)
+
+    def test_wasd_overrides_stick_and_opposite_keys_cancel(self):
+        raw = Input(valid=True, mode_switch=1, wheel=1024)
+        raw.normalized[:] = (0.3, -0.4, 0.6, -0.7)
+        value = Control()
+        for keys, expected in ((1, (1, 0)), (2, (-1, 0)), (4, (0, 1)), (8, (0, -1)), (15, (0, 0))):
+            raw.keyboard = keys
+            self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+            self.assertTrue(value.keyboard_move)
+            self.assertEqual((value.move_x, value.move_y), expected)
+        raw.keyboard = 0
+        self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+        self.assertFalse(value.keyboard_move)
+        self.assertAlmostEqual(value.move_x, -0.7, places=6)
+        self.assertAlmostEqual(value.move_y, -0.6, places=6)
+
+    def test_diagonal_keyboard_speed_is_normalized(self):
+        raw = Input(valid=True, mode_switch=1, wheel=1024, keyboard=9)
+        value = Control()
+        self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+        self.assertGreater(value.move_x, 0)
+        self.assertLess(value.move_y, 0)
+        self.assertAlmostEqual(math.hypot(value.move_x, value.move_y), 1.0, places=6)
+
+    def test_shift_only_applies_in_n_and_combines_with_trigger(self):
+        for mode in (0, 1, 2):
+            for shift in (False, True):
+                for trigger in (False, True):
+                    raw = Input(valid=True, mode_switch=mode, wheel=1024,
+                                keyboard=16 if shift else 0, trigger=trigger)
+                    value = Control()
+                    self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+                    self.assertEqual(value.spin_down, mode != 0 and (trigger or (mode == 1 and shift)))
+
+    def test_s_keeps_stick_inputs_and_ignores_keyboard_motion(self):
+        raw = Input(valid=True, mode_switch=2, wheel=1024, keyboard=17,
+                    mouse_x=400, mouse_y=200, mouse_left=1, mouse_right=1)
+        raw.normalized[:] = (0.2, 0.3, 0.4, 0.5)
+        value = Control()
+        self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+        self.assertFalse(value.keyboard_move or value.spin_down)
+        self.assertAlmostEqual(value.move_x, 0.5)
+        self.assertAlmostEqual(value.move_y, -0.4)
+        self.assertEqual((value.mouse_x, value.mouse_y), (0, 0))
+        self.assertTrue(value.mouse_left)
+
+    def test_left_mouse_is_manual_burst_in_n_only(self):
+        self.input.wheel = 0
+        self.input.mouse_left = True
+        self.input.mouse_right = True
+        self.assertTrue(self.lib.Vt13ManualBurst(c.byref(self.shoot), c.byref(self.input)))
+        self.input.mouse_left = False
+        self.assertFalse(self.lib.Vt13ManualBurst(c.byref(self.shoot), c.byref(self.input)))
+        self.input.mode, self.input.mouse_left = 2, True
+        self.assertFalse(self.lib.Vt13ManualBurst(c.byref(self.shoot), c.byref(self.input)))
+        self.input.mode, self.input.valid = 1, False
+        self.assertFalse(self.lib.Vt13ManualBurst(c.byref(self.shoot), c.byref(self.input)))
+
+    def test_n_right_mouse_selects_target_body_and_fixed_return(self):
+        self.input.mouse_right = True
+        self.status.auto_active = True
+        self.assertEqual(self.step_spin(), 2)
+        self.input.spin_down = True
+        self.assertEqual(self.step_spin(), 3)
+        self.input.spin_down = False
+        self.status.yaw_world, self.status.yaw_joint = 1.2, 0.8
+        self.assertEqual(self.step_spin(102), 4)
+        self.assertAlmostEqual(self.spin.return_heading, 1.2, places=6)
+
+    def test_mouse_delta_is_consumed_once_per_frame_and_resets_on_disable(self):
+        state = MouseControl()
+        dx, dy = c.c_int16(), c.c_int16()
+        def take():
+            return self.lib.Vt13TakeMouseDelta(c.byref(state), c.byref(self.input), c.byref(dx), c.byref(dy))
+        self.input.sequence, self.input.mouse_x, self.input.mouse_y = 10, 400, -200
+        self.assertFalse(take())
+        self.input.sequence = 11
+        self.assertTrue(take())
+        self.assertEqual((dx.value, dy.value), (400, -200))
+        for _ in range(20):
+            self.assertFalse(take())
+            self.assertEqual((dx.value, dy.value), (0, 0))
+        self.input.mode = 0
+        self.assertFalse(take())
+        self.input.mode, self.input.sequence = 1, 12
+        self.assertFalse(take())
+        state.sequence, self.input.sequence = 0xffffffff, 0
+        self.assertTrue(take())
+
+    def test_keyboard_acceleration_release_and_joystick_handover(self):
+        state = KeyboardMotion()
+        self.input.keyboard_move, self.input.move_x = True, 1
+        def update(now):
+            self.lib.Vt13UpdateKeyboardMotion(c.byref(state), c.byref(self.input), now, 4, 2, 4)
+        update(100)
+        self.assertEqual(state.vx, 0)
+        update(120)
+        self.assertAlmostEqual(state.vx, 0.04, places=6)
+        for now in range(140, 2240, 20):
+            update(now)
+        self.assertAlmostEqual(state.vx, 4, places=5)
+        self.input.keyboard_move, self.input.move_x = False, -1
+        update(2240)
+        self.assertAlmostEqual(state.vx, 3.92, places=4)
+        for now in range(2260, 7000, 20):
+            update(now)
+        self.assertFalse(state.active)
+        self.assertAlmostEqual(state.vx, -4, places=5)
+        self.input.mode = 0
+        update(7000)
+        self.assertEqual((state.vx, state.vy), (0, 0))
+
+    def test_keyboard_clock_wrap_and_long_period_are_bounded(self):
+        state = KeyboardMotion()
+        self.input.keyboard_move, self.input.move_x = True, 1
+        update = self.lib.Vt13UpdateKeyboardMotion
+        update(c.byref(state), c.byref(self.input), 0xfffffff0, 4, 2, 4)
+        update(c.byref(state), c.byref(self.input), 4, 4, 2, 4)
+        self.assertAlmostEqual(state.vx, 0.04, places=6)
+        update(c.byref(state), c.byref(self.input), 1004, 4, 2, 4)
+        self.assertAlmostEqual(state.vx, 0.08, places=6)
+        self.input.mode = 2
+        update(c.byref(state), c.byref(self.input), 1005, 4, 2, 4)
+        self.assertFalse(state.active)
+        self.assertEqual((state.vx, state.vy), (0, 0))
 
 
 # 直接运行脚本时启动完整控制层测试。

@@ -45,6 +45,7 @@ PID_t chassis_pid;
 static Vt13ControlInput chassis_input;
 static GimbalControlStatus chassis_gimbal;
 static Vt13SpinControl chassis_spin_control;
+static Vt13KeyboardMotion chassis_keyboard_motion;
 
 /**
  * @brief 更新小陀螺及松手回正状态并映射到底盘模式。
@@ -71,6 +72,12 @@ static void ChassisBuildTranslationReference(void)
 {
     float vx = fp32_deadline(chassis_input.move_x * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
     float vy = fp32_deadline(chassis_input.move_y * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
+    Vt13UpdateKeyboardMotion(&chassis_keyboard_motion, &chassis_input, HAL_GetTick(), CHASSIS_KEY_MAX_SPEED, CHASSIS_KEY_ACCEL, CHASSIS_KEY_DECEL);
+    /* 方向键及松键交接期间使用平滑速度；空闲后完全恢复原摇杆响应。 */
+    if (chassis_keyboard_motion.active || chassis_input.keyboard_move) {
+        vx = chassis_keyboard_motion.vx;
+        vy = chassis_keyboard_motion.vy;
+    }
     chassis.reference_rc.vx = vx;
     chassis.reference_rc.vy = vy;
     /* 有目标不跟随或松手回正时，摇杆始终按底盘自身方向平移。 */
@@ -98,6 +105,8 @@ static void ChassisForceDisable(void)
     chassis.force_x = chassis.force_y = chassis.torque_wz = 0.0f;
     chassis.wz_set_smoothed = 0.0f;
     memset(&chassis_spin_control, 0, sizeof(chassis_spin_control));
+    memset(&chassis_keyboard_motion, 0, sizeof(chassis_keyboard_motion));
+    chassis_keyboard_motion.update_time_ms = HAL_GetTick();
     PID_clear(&chassis.vel_x_pid);
     PID_clear(&chassis.vel_y_pid);
     PID_clear(&chassis.omega_pid);
@@ -274,8 +283,8 @@ void ChassisReference(void)
         if (chassis.spin_acceleration_limit < 30.0f) chassis.spin_acceleration_limit += 0.5f;
     } else /* 有目标的底盘坐标模式取消云台跟随，角速度目标置零。 */ if (chassis.mode == CHASSIS_BODY) {
         chassis.reference.wz = 0.0f;
-    } else { /* N 档及 S 档无目标统一跟随；S 档有目标保留松手固定朝向回正。 */
-        bool fixed_heading = chassis.mode == CHASSIS_SPIN_RETURN && chassis_input.mode == VT13_MODE_S && chassis_gimbal.auto_active;
+    } else { /* 无有效自瞄时统一跟随；N 右键/S 档有效自瞄保留松手固定朝向回正。 */
+        bool fixed_heading = chassis.mode == CHASSIS_SPIN_RETURN && Vt13AutoAimRequested(&chassis_input) && chassis_gimbal.auto_active;
         float error = fixed_heading ? Vt13WrapAngle(chassis_spin_control.return_heading - Vt13ChassisHeading(&chassis_gimbal)) : Vt13WrapAngle(chassis.yaw_delta);
         float max_wz = chassis.mode == CHASSIS_SPIN_RETURN ? CHASSIS_SPIN_RETURN_MAX_WZ : MAX_OUT_CHASSIS_FOLLOW_GIMBAL;
         float wz_damping = CHASSIS_FOLLOW_WZ_DAMPING;

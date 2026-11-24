@@ -123,13 +123,13 @@
 //遥控器相关参数
 #define CHASSIS_RC_DEADLINE (5.0f)      // 摇杆死区
 #define CHASSIS_RC_MAX_RANGE (660.0f)   //遥控器最大量程
-#define CHASSIS_RC_MAX_SPEED (4.0f)     //最大速度(m/s)
+#define CHASSIS_RC_MAX_SPEED (6.0f)     //最大速度(m/s)
 #define CHASSIS_RC_MAX_VELOCITY (2.0f)  //最大角速度(rad/s) 仅用于无云台模式
 
-// WASD uses the current top speed; acceleration and release braking are in m/s^2.
+// WASD 沿用当前最高速度，加速和松键交接减速单位为 m/s^2。
 #define CHASSIS_KEY_MAX_SPEED CHASSIS_RC_MAX_SPEED
-#define CHASSIS_KEY_ACCEL (2.0f)
-#define CHASSIS_KEY_DECEL (4.0f)
+#define CHASSIS_KEY_ACCEL (6.0f)
+#define CHASSIS_KEY_DECEL (6.0f)
 
 /*-------------------- 云台 --------------------*/
 //云台电流发送参数
@@ -141,7 +141,7 @@
 
 //鼠标灵敏度 ---------------------
 #define MOUSE_SENSITIVITY (40000.0f)
-// Mouse counts / MOUSE_SENSITIVITY = radians per received DT7 frame.
+// 每个新有效接收帧的鼠标位移除以 MOUSE_SENSITIVITY 得到本帧角度增量，单位 rad。
 //遥控器灵敏度 ---------------------
 #define REMOTE_CONTROLLER_SENSITIVITY (100000.0f)
 #define REMOTE_CONTROLLER_MAX_DEADLINE (20.0f)

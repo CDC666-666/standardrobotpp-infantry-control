@@ -29,7 +29,7 @@
 
 ## 配套套件
 
-- [VT13 整车操控与接口](./doc/vt13_control.md)：默认 VT13 控车；C 档失能、N/S 档、Fn 开轮、拨轮连发及小陀螺松手回正，待实车验证。
+- [VT13 整车操控与接口](./doc/vt13_control.md)：默认 VT13 控车；N 档键鼠优先、右键自瞄、左键发射、Shift/扳机小陀螺及回正，保留失能门控，待实车验证。
 - [旧遥控操控与键鼠停用记录](./doc/keymouse_control.md)：保留 DT7 路径的操作与历史记录。
 - [UART2 用途切换与 VT13 接收](./doc/uart2_role.md)：在 `robot_param.h` 选择 VOFA、VT13 或旧板间用途。
 

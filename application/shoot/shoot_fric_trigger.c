@@ -176,13 +176,13 @@ void ShootSetMode(void)
         return;
     }
     ShootUpdateFrictionSwitch(&shoot_input, shoot_enabled);
-    auto_target = shoot_input.mode == VT13_MODE_S && shoot_gimbal.auto_active;
-    /* S 档有效自瞄沿用前馈微调版自动开轮，其余情况仍由 Fn 锁存控制。 */
+    auto_target = Vt13AutoAimRequested(&shoot_input) && shoot_gimbal.auto_active;
+    /* N 右键/S 档有效自瞄沿用自动开轮；左键仅许可拨弹，不取消预热。 */
     SHOOT.fric_flag = auto_target || shoot_control.friction_on;
     SHOOT.state = SHOOT.fric_flag ? FRIC_READY : FRIC_NOT_READY;
     manual_request = ShootManualBurstRequested(&shoot_input);
     auto_request = Vt13AutoFireRequested(&shoot_input, &shoot_gimbal) && GetScCmdFire();
-    /* 有效自瞄时仅由视觉 fire 决定拨弹，fire 撤销后拨轮不能续发。 */
+    /* 有效自瞄时拨弹需要视觉 fire 与左键，任一撤销后拨轮都不能续发。 */
     if (auto_target) manual_request = false;
     SHOOT.move_flag = 0;
     /* 全部机构许可通过，且手动或视觉至少一路请求开火时才进入连发。 */
@@ -532,9 +532,17 @@ void ShootSendCmd(void)
       ShootForceDisable();
   } else {
       /* 手动请求不依赖 USB；自动请求还需最新视觉快照允许。 */
+      bool auto_target = Vt13AutoAimRequested(&latest) && status.auto_active;
       bool manual_request = ShootManualBurstRequested(&latest);
-      /* 与模式选择一致：S 档有效自瞄只接受视觉开火许可。 */
-      if (latest.mode == VT13_MODE_S && status.auto_active) manual_request = false;
+      /* 有效自瞄只接受视觉与左键共同许可，拨轮和手动左键均不能覆盖视觉停火。 */
+      if (auto_target) manual_request = false;
+      /* 本拍自瞄已退出且 Fn 未开轮时，不能沿用上一拍自动开轮计算出的电流。 */
+      if (!auto_target && !shoot_control.friction_on) {
+          SHOOT.fric_flag = 0;
+          SHOOT.state = FRIC_NOT_READY;
+          SHOOT.REF.fric_speed_ref_R = SHOOT.REF.fric_speed_ref_L = 0.0f;
+          SHOOT.fric_motor[0].set.curr = SHOOT.fric_motor[1].set.curr = 0.0f;
+      }
       VisionReadControl(&vision);
       /* 电机/到速许可失效或两路开火请求都撤销时，立即清零拨弹输出并取消堵转残留。 */
       if (!ShootCanFeed() || !(manual_request ||

@@ -4,6 +4,13 @@
 #include <string.h>
 
 #define VT13_PI 3.14159265358979323846f
+/* 键盘线上位定义与现有遥控协议一致：W/S/A/D 为 0..3，Shift 为 4。 */
+#define VT13_KEY_W_MASK 0x0001U
+#define VT13_KEY_S_MASK 0x0002U
+#define VT13_KEY_A_MASK 0x0004U
+#define VT13_KEY_D_MASK 0x0008U
+#define VT13_KEY_MOVE_MASK 0x000fU
+#define VT13_KEY_SHIFT_MASK 0x0010U
 
 /**
  * @brief 将校验后的原始遥控快照转换为整车统一输入。
@@ -33,6 +40,25 @@ void Vt13MapControl(const Vt13Input *raw, Vt13ControlInput *out)
     out->fn_down = raw->function_left;
     /* 小陀螺使用右上扳机；右上功能键不参与该映射。 */
     out->spin_down = raw->trigger;
+    out->mouse_left = raw->mouse_left != 0U;
+    out->mouse_right = raw->mouse_right != 0U;
+    /* 只在 N 档接入键鼠移动与 Shift，S 档保持原摇杆和扳机操控。 */
+    if (out->mode == VT13_MODE_N) {
+        out->mouse_x = raw->mouse_x;
+        out->mouse_y = raw->mouse_y;
+        out->keyboard_move = (raw->keyboard & VT13_KEY_MOVE_MASK) != 0U;
+        out->spin_down = out->spin_down || (raw->keyboard & VT13_KEY_SHIFT_MASK) != 0U;
+        /* 有方向键时按键盘取代摇杆；对向同时按下得到零，仍阻止摇杆介入。 */
+        if (out->keyboard_move) {
+            out->move_x = ((raw->keyboard & VT13_KEY_W_MASK) != 0U) - ((raw->keyboard & VT13_KEY_S_MASK) != 0U);
+            out->move_y = ((raw->keyboard & VT13_KEY_A_MASK) != 0U) - ((raw->keyboard & VT13_KEY_D_MASK) != 0U);
+            /* 斜向输入归一化，避免两轴同时按下时总速度超过键盘速度上限。 */
+            if (out->move_x != 0.0f && out->move_y != 0.0f) {
+                out->move_x *= 0.7071067812f;
+                out->move_y *= 0.7071067812f;
+            }
+        }
+    }
 }
 
 /**
@@ -119,7 +145,7 @@ void Vt13UpdateInit(Vt13InitControl *state, bool enabled, bool feedback_valid,
 
 /**
  * @brief 按失能、旋转、松手回正和目标状态选择底盘模式。
- * @note N 档及 S 档无目标时持续对准当前云台；S 档有目标保留固定朝向回正。
+ * @note 无有效自瞄时持续对准当前云台；N 右键/S 档有效自瞄时采用固定朝向回正。
  */
 Vt13ChassisMode_e Vt13UpdateSpin(Vt13SpinControl *state, const Vt13ControlInput *input,
                                 const GimbalControlStatus *gimbal, float chassis_wz,
@@ -137,16 +163,16 @@ Vt13ChassisMode_e Vt13UpdateSpin(Vt13SpinControl *state, const Vt13ControlInput 
         state->returning = state->settling = false;
         return VT13_CHASSIS_SPIN;
     }
-    /* 松手沿进入回正；保存朝向仅供 S 档有目标的原固定回正路径使用。 */
+    /* 扳机或 Shift 全部松开时进入回正，保存朝向供有效自瞄的固定回正路径使用。 */
     if (state->spin_last) {
         state->return_heading = gimbal->yaw_world;
         state->returning = true;
         state->settling = false;
     }
     state->spin_last = false;
-    /* 仅 N 档及 S 档无目标使用当前关节角；S 档有目标保留原误差与完成阈值。 */
+    /* 无有效自瞄时使用当前关节角；有效自瞄保持原固定回正误差与完成阈值。 */
     if (state->returning) {
-        bool fixed_heading = input->mode == VT13_MODE_S && gimbal->auto_active;
+        bool fixed_heading = Vt13AutoAimRequested(input) && gimbal->auto_active;
         float error = fixed_heading
                       ? Vt13WrapAngle(state->return_heading - Vt13ChassisHeading(gimbal))
                       : Vt13WrapAngle(gimbal->yaw_joint);
@@ -164,8 +190,8 @@ Vt13ChassisMode_e Vt13UpdateSpin(Vt13SpinControl *state, const Vt13ControlInput 
         /* 未连续稳定完成时，本拍继续保持回正模式。 */
         if (state->returning) return VT13_CHASSIS_RETURN;
     }
-    /* 回正结束后，只有 S 档实际自瞄时采用底盘坐标，其余情况跟随云台。 */
-    return input->mode == VT13_MODE_S && gimbal->auto_active
+    /* 回正结束后，N 右键或 S 档实际自瞄时采用底盘坐标，其余情况跟随云台。 */
+    return Vt13AutoAimRequested(input) && gimbal->auto_active
            ? VT13_CHASSIS_BODY : VT13_CHASSIS_FOLLOW;
 }
 
@@ -201,15 +227,108 @@ bool Vt13ManualBurst(Vt13ShootControl *state, const Vt13ControlInput *input)
     else if (input->wheel <= -0.95f) state->manual_burst = true;
     /* 拨轮退回释放阈值后退出连发，中间区间保持原请求以避免抖动。 */
     else if (input->wheel >= -0.90f) state->manual_burst = false;
-    return state->manual_burst;
+    /* N 档左键等效拨轮连发；有目标自瞄时，调用方会禁止手动请求覆盖视觉停火。 */
+    return Vt13ControlEnabled(input) && (state->manual_burst || (input->mode == VT13_MODE_N && input->mouse_left));
 }
 
 /**
- * @brief 判断 S 档是否具备视觉自动连发请求。
- * @note 还须由发射任务检查云台快照时效、Fn 开轮、轮速和电机健康状态。
+ * @brief 判断 N/S 自瞄是否同时具备视觉许可与左键发射确认。
+ * @note 还须由发射任务检查云台快照时效、摩擦轮开轮、轮速和电机健康状态。
  */
 bool Vt13AutoFireRequested(const Vt13ControlInput *input, const GimbalControlStatus *gimbal)
 {
-    return Vt13ControlEnabled(input) && input->mode == VT13_MODE_S &&
+    /* N/S 自瞄都必须额外按住左键，不能用拨轮绕过视觉开火许可。 */
+    return Vt13AutoAimRequested(input) && input->mouse_left &&
            gimbal->auto_active && gimbal->vision_fire;
+}
+
+/**
+ * @brief 判断当前遥控模式和鼠标右键是否请求自瞄。
+ * @note N 档按住右键请求，S 档保留原自瞄入口；失能一律撤销请求。
+ */
+bool Vt13AutoAimRequested(const Vt13ControlInput *input)
+{
+    return Vt13ControlEnabled(input) && (input->mode == VT13_MODE_S || input->mouse_right);
+}
+
+/**
+ * @brief 消费 N 档新接收帧中的鼠标位移，每个序号最多返回一次。
+ * @note 首次进入或失能恢复先同步序号，避免把缓存位移补算到新的手动参考。
+ */
+bool Vt13TakeMouseDelta(Vt13MouseControl *state, const Vt13ControlInput *input, int16_t *dx, int16_t *dy)
+{
+    *dx = *dy = 0;
+    /* 非 N 档或遥控失效时撤销消费状态，下次进入重新同步。 */
+    if (!Vt13ControlEnabled(input) || input->mode != VT13_MODE_N) {
+        state->seen = false;
+        return false;
+    }
+    /* 首次进入只记录当前序号，初始化及模式切换时不补算旧输入。 */
+    if (!state->seen) {
+        state->seen = true;
+        state->sequence = input->sequence;
+        return false;
+    }
+    /* 控制任务频率高于接收频率，同一帧不能重复积分鼠标位移。 */
+    if (state->sequence == input->sequence) return false;
+    state->sequence = input->sequence;
+    *dx = input->mouse_x;
+    *dy = input->mouse_y;
+    return *dx != 0 || *dy != 0;
+}
+
+/**
+ * @brief 按加减速限制把单轴速度推进到本拍目标。
+ * @note 释放、减速或反向先采用减速限制，增加同向速度采用加速限制。
+ */
+static float Vt13KeyboardAxisStep(float current, float target, float dt_s, float accel, float decel)
+{
+    float rate = current * target < 0.0f || fabsf(target) < fabsf(current) ? decel : accel;
+    float step = rate * dt_s;
+    /* 剩余差值在本拍变化范围内时直接到位，避免越过目标和浮点抖动。 */
+    if (fabsf(target - current) <= step) return target;
+    return current + (target > current ? step : -step);
+}
+
+/**
+ * @brief 更新 WASD 优先控制及松键向摇杆平滑交接的平移参考。
+ * @note 键盘未使用过时不影响原摇杆响应；失能或离开 N 档立即清除历史速度。
+ */
+void Vt13UpdateKeyboardMotion(Vt13KeyboardMotion *state, const Vt13ControlInput *input,
+                              uint32_t now_ms, float max_speed, float accel, float decel)
+{
+    uint32_t elapsed;
+    float target_x, target_y, dt_s;
+    /* 仅处理有效 N 档；异常限速参数也必须撤销键盘速度历史。 */
+    if (!Vt13ControlEnabled(input) || input->mode != VT13_MODE_N ||
+        !isfinite(max_speed) || !isfinite(accel) || !isfinite(decel) ||
+        max_speed <= 0.0f || accel <= 0.0f || decel <= 0.0f) {
+        memset(state, 0, sizeof(*state));
+        state->update_time_ms = now_ms;
+        return;
+    }
+    /* 方向键首次按下时沿用上一拍平移参考，不把未使用期间的时间一次性补算进去。 */
+    if (input->keyboard_move && !state->active) {
+        state->active = true;
+        state->update_time_ms = now_ms;
+    }
+    /* 没有键盘速度历史时直接沿用摇杆，并跟踪上一拍参考供下次按键平滑交接。 */
+    if (!state->active) {
+        state->vx = input->move_x * max_speed;
+        state->vy = input->move_y * max_speed;
+        state->update_time_ms = now_ms;
+        return;
+    }
+    elapsed = now_ms - state->update_time_ms;
+    state->update_time_ms = now_ms;
+    /* 调度延迟时最多补算 20 ms，避免恢复后目标速度突增。 */
+    if (elapsed > 20U) elapsed = 20U;
+    dt_s = (float)elapsed * 0.001f;
+    target_x = input->move_x * max_speed;
+    target_y = input->move_y * max_speed;
+    state->vx = Vt13KeyboardAxisStep(state->vx, target_x, dt_s, accel, decel);
+    state->vy = Vt13KeyboardAxisStep(state->vy, target_y, dt_s, accel, decel);
+    /* 松开方向键后跟到当前摇杆目标，随后恢复不经过键盘平滑器的原摇杆路径。 */
+    if (!input->keyboard_move && state->vx == target_x && state->vy == target_y)
+        state->active = false;
 }

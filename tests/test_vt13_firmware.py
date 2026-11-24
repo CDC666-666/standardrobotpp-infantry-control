@@ -136,6 +136,32 @@ GIMBAL = r'''
 static void step(void) {
     ++now_ms;GimbalObserver();GimbalSetMode();GimbalReference();GimbalConsole();GimbalSendCmd();
 }
+
+/* 验证实际云台对鼠标优先、重复帧和右键进出自瞄的处理。 */
+static void check_keyboard_mouse_gimbal(void) {
+    raw.mode_switch=0;step();enable_remote();sensor_error=false;
+    gimbal_direct.yaw.fdb.pos=GIMBAL_DIRECT_YAW_MID;
+    gimbal_direct.pitch.fdb.pos=GIMBAL_DIRECT_PITCH_MID;
+    imu_angle[AX_YAW]=imu_angle[AX_PITCH]=0;
+    step();step();assert(gimbal_direct.mode==GIMBAL_IMU);
+    raw.normalized[0]=raw.normalized[1]=1;
+    raw.mouse_x=400;raw.mouse_y=-200;++raw.sequence;
+    float yaw_before=gimbal_direct.reference.yaw,pitch_before=gimbal_direct.reference.pitch;
+    step();
+    assert(fabsf(gimbal_direct.reference.yaw-(yaw_before-400.0f/MOUSE_SENSITIVITY))<0.00001f);
+    assert(fabsf(gimbal_direct.reference.pitch-(pitch_before+200.0f/MOUSE_SENSITIVITY))<0.00001f);
+    yaw_before=gimbal_direct.reference.yaw;pitch_before=gimbal_direct.reference.pitch;
+    for(int i=0;i<20;++i)step();
+    assert(gimbal_direct.reference.yaw==yaw_before&&gimbal_direct.reference.pitch==pitch_before);
+    raw.mouse_x=raw.mouse_y=0;++raw.sequence;step();
+    assert(fabsf(gimbal_direct.reference.yaw-(yaw_before-660.0f/REMOTE_CONTROLLER_SENSITIVITY))<0.00001f);
+    raw.mouse_right=1;vision.valid=true;vision.fire=true;step();
+    assert(gimbal_direct.mode==GIMBAL_AUTO_AIM);
+    raw.mouse_right=0;step();assert(gimbal_direct.mode==GIMBAL_IMU);
+    assert(gimbal_direct.reference.yaw==gimbal_direct.feedback_pos.yaw);
+    raw.mouse_right=1;vision.valid=false;step();assert(gimbal_direct.mode==GIMBAL_IMU);
+    raw.mode_switch=0;step();assert(last_torque==0&&sent[GIMBAL_CAN][1][2]==0);
+}
 int main(void) {
     GimbalControlStatus status;
     enable_remote();GimbalInit();
@@ -173,11 +199,37 @@ int main(void) {
     assert(isfinite(gimbal_direct_pid.yaw_angle.out));
     gimbal_direct.yaw.fdb.pos=GIMBAL_DIRECT_YAW_MID;imu_angle[AX_YAW]=0;
     step();assert(gimbal_init_control.state==VT13_INIT_READY);
-    puts("actual gimbal state and send gates: passed");return 0;
+    check_keyboard_mouse_gimbal();
+    puts("actual gimbal state, mouse and send gates: passed");return 0;
 }
 '''
 
 CHASSIS = r'''
+
+/* 验证 WASD 覆盖摇杆、Shift 小陀螺及空闲交回摇杆的实际参考链路。 */
+static void check_keyboard_chassis(void) {
+    ChassisInit();ChassisForceDisable();enable_remote();chassis.P_wz=0;
+    raw.normalized[3]=-1;raw.keyboard=1;
+    ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_FOLLOW);
+    now_ms+=20;fake_status.update_time_ms=now_ms;
+    ChassisSetMode();ChassisReference();assert(chassis.reference.vx>0&&chassis.reference.vy==0);
+    raw.keyboard=17;now_ms+=20;fake_status.update_time_ms=now_ms;
+    ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_SPIN);
+    raw.keyboard=1;now_ms+=20;fake_status.update_time_ms=now_ms;
+    ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_SPIN_RETURN);
+    now_ms+=100;fake_status.update_time_ms=now_ms;
+    ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_FOLLOW);
+    raw.keyboard=0;
+    for(int i=0;i<500;++i) {
+        now_ms+=20;fake_status.update_time_ms=now_ms;
+        ChassisSetMode();ChassisReference();
+    }
+    assert(chassis.reference.vx==-CHASSIS_RC_MAX_SPEED);
+    raw.mouse_right=1;fake_status.auto_active=true;
+    ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_BODY&&chassis.reference.wz==0);
+    raw.mode_switch=0;ChassisSendCmd();
+    for(int i=0;i<4;++i)assert(sent[CHASSIS_CAN][0][i]==0);
+}
 /* 验证跟随、旋转、松手回正、稳定后恢复跟随的实际模式链路及最终速度边界。 */
 static void check_follow_return_wz_limit(void) {
     const float directions[2]={-1.0f,1.0f};
@@ -253,13 +305,36 @@ int main(void) {
     assert(chassis.mode==CHASSIS_LOCK);
     for(int i=0;i<4;++i)assert(sent[CHASSIS_CAN][0][i]==0);
     check_follow_return_wz_limit();
-    puts("actual chassis coordinates, wz limits and send gates: passed");return 0;
+    check_keyboard_chassis();
+    puts("actual chassis keyboard, coordinates, wz limits and send gates: passed");return 0;
 }
 '''
 
 SHOOT = r'''
 /* 按真实发射任务顺序执行一拍，检查模式到发送门控的完整路径。 */
 static void step(void) { ShootSetMode();ShootReference();ShootConsole();ShootSendCmd(); }
+
+/* 验证 N 档左右键以及 S 档自瞄均不能绕过视觉或机构安全许可。 */
+static void check_mouse_shoot_gates(void) {
+    enable_remote();ShootInit();ShootForceDisable();
+    SHOOT.FDB.fric_speed_fdb_R=-600;SHOOT.FDB.fric_speed_fdb_L=600;
+    raw.mouse_left=1;step();assert(SHOOT.mode==LOAD_STOP&&!SHOOT.fric_flag);
+    raw.function_left=true;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
+    raw.mouse_left=0;step();assert(SHOOT.mode==LOAD_STOP);
+    raw.mouse_right=1;fake_status.auto_active=true;fake_status.vision_fire=true;
+    vision.valid=vision.fire=true;shoot_control.friction_on=false;raw.function_left=false;
+    step();assert(SHOOT.fric_flag&&SHOOT.state==FRIC_READY&&SHOOT.mode==LOAD_STOP);
+    raw.mouse_left=1;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
+    raw.wheel=364;vision.fire=false;fake_status.vision_fire=false;
+    step();assert(SHOOT.mode==LOAD_STOP);
+    vision.fire=true;fake_status.vision_fire=true;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
+    raw.mouse_left=0;ShootSendCmd();assert(sent[TRIGGER_MOTOR_CAN][1][1]==0);
+    raw.mouse_left=1;raw.wheel=1024;fake_status.auto_active=false;vision.valid=false;
+    step();assert(SHOOT.mode==LOAD_STOP&&!SHOOT.fric_flag);
+    raw.function_left=true;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
+    raw.mode_switch=0;ShootSendCmd();
+    assert(sent[FRIC_MOTOR_R_CAN][0][0]==0&&sent[TRIGGER_MOTOR_CAN][1][1]==0);
+}
 int main(void) {
     enable_remote();ShootInit();
     SHOOT.FDB.fric_speed_fdb_R=-600;SHOOT.FDB.fric_speed_fdb_L=600;
@@ -270,7 +345,9 @@ int main(void) {
     raw.wheel=1024;fake_status.auto_active=true;fake_status.vision_fire=true;
     vision.valid=vision.fire=true;
     step();assert(SHOOT.mode==LOAD_STOP);
-    raw.mode_switch=2;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
+    raw.mode_switch=2;step();assert(SHOOT.mode==LOAD_STOP&&SHOOT.fric_flag);
+    /* 视觉已允许仍不能直接发弹，必须按住左键确认。 */
+    raw.mouse_left=1;step();assert(SHOOT.mode==LOAD_BURSTFIRE);
     /* S 档有效目标自动开轮；视觉停火不能被拨轮覆盖。 */
     shoot_control.friction_on=false;
     step();assert(SHOOT.fric_flag&&SHOOT.state==FRIC_READY);
@@ -297,7 +374,8 @@ int main(void) {
     raw.function_left=false;step();raw.function_left=true;step();assert(SHOOT.fric_flag);
     fake_status.ready=false;ShootSendCmd();
     assert(sent[FRIC_MOTOR_R_CAN][0][0]==0&&sent[TRIGGER_MOTOR_CAN][1][1]==0);
-    puts("actual shooting interlocks and send gates: passed");return 0;
+    check_mouse_shoot_gates();
+    puts("actual shooting mouse interlocks and send gates: passed");return 0;
 }
 '''
 
