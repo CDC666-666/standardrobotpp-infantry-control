@@ -128,7 +128,7 @@
         "ahrs_middleware.h": "c",
         "can_cmd_supcap.h": "c",
         "supcap.h": "c",
-        "bsp_servo_pwm.h": "c"
+        "bsp_servo_pwm.h": "c",
         "usb.h": "c",
         "robot_param_balanced_infantry_gimbal.h": "c"
     },
