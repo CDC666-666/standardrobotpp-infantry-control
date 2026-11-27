@@ -264,9 +264,10 @@ static void GimbalAutoYawConsole(void)
     YawAutoLqrEso_Calc(&yaw_auto_ctrl, &yaw_auto_cfg, &feedback, &ref, dt_s, &yaw_auto_output);
     // set.vel 仅保留原始规划速度参考供现有 VOFA 通道观察；MIT 发送只使用 set.tor。
     gimbal_direct.yaw.set.vel = ref.omega_rad_s;
-    // 底盘角速度补偿有独立增益；最终力矩另做总限幅与斜率限制。
-    tau_world = controller_was_ready ? yaw_auto_output.tau_cmd_nm + GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF * chassis_wz : 0.0f;
-    // 底盘补偿叠加后，再按本车总力矩上限及上次实际输出做最终约束。
+    // 暂停自瞄底盘力矩补偿，保留原式供回退；手动 yaw 速度补偿不受影响。
+    // tau_world = controller_was_ready ? yaw_auto_output.tau_cmd_nm + GIMBAL_AUTO_YAW_CHASSIS_WZ_TORQUE_FF * chassis_wz : 0.0f;
+    tau_world = controller_was_ready ? yaw_auto_output.tau_cmd_nm : 0.0f;
+    // 按本车总力矩上限及上次实际输出做最终约束。
     tau_world = fp32_constrain(tau_world, -GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM, GIMBAL_AUTO_YAW_TORQUE_LIMIT_NM);
     tau_world = fp32_constrain(tau_world, tau_previous - yaw_auto_cfg.torque_slew_rate_nm_s * dt_s, tau_previous + yaw_auto_cfg.torque_slew_rate_nm_s * dt_s);
     // 控制器正方向力矩映射回电机方向，作为 MIT 命令的力矩分量。
