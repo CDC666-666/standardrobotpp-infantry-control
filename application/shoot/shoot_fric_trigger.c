@@ -536,12 +536,17 @@ void ShootSendCmd(void)
       bool manual_request = ShootManualBurstRequested(&latest);
       /* 有效自瞄只接受视觉与左键共同许可，拨轮和手动左键均不能覆盖视觉停火。 */
       if (auto_target) manual_request = false;
-      /* 本拍自瞄已退出且 Fn 未开轮时，不能沿用上一拍自动开轮计算出的电流。 */
+      /* 普通关轮只将速度目标归零，保留速度环电流用于制动和零速控制。 */
       if (!auto_target && !shoot_control.friction_on) {
+          bool target_changed = SHOOT.REF.fric_speed_ref_R != 0.0f || SHOOT.REF.fric_speed_ref_L != 0.0f;
           SHOOT.fric_flag = 0;
           SHOOT.state = FRIC_NOT_READY;
           SHOOT.REF.fric_speed_ref_R = SHOOT.REF.fric_speed_ref_L = 0.0f;
-          SHOOT.fric_motor[0].set.curr = SHOOT.fric_motor[1].set.curr = 0.0f;
+          /* 发送前才退出自瞄时按零速重算，避免继续发送原开轮目标的驱动电流。 */
+          if (target_changed) {
+              SHOOT.fric_motor[0].set.curr = PID_calc(&SHOOT.fric_pid[0], SHOOT.FDB.fric_speed_fdb_R, 0.0f);
+              SHOOT.fric_motor[1].set.curr = PID_calc(&SHOOT.fric_pid[1], SHOOT.FDB.fric_speed_fdb_L, 0.0f);
+          }
       }
       VisionReadControl(&vision);
       /* 电机/到速许可失效或两路开火请求都撤销时，立即清零拨弹输出并取消堵转残留。 */
