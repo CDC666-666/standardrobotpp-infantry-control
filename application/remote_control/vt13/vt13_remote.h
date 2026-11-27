@@ -22,6 +22,7 @@ typedef struct {
 
 typedef struct {
     uint32_t bytes, valid_frames, crc_errors, invalid_frames;
+    uint32_t keymouse_invalid_frames; /* CRC/基础遥控合法、可选键鼠状态不合法而降级为摇杆帧的次数。 */
 } Vt13ParserStats;
 
 typedef struct {

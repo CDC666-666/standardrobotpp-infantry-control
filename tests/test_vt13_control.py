@@ -104,7 +104,7 @@ unsigned test_size(unsigned type) {
             "Vt13TakeMouseDelta": ([c.POINTER(MouseControl), c.POINTER(Control),
                                     c.POINTER(c.c_int16), c.POINTER(c.c_int16)], c.c_bool),
             "Vt13UpdateKeyboardMotion": ([c.POINTER(KeyboardMotion), c.POINTER(Control),
-                                           c.c_uint32, c.c_float, c.c_float, c.c_float], None),
+                                           c.c_uint32, c.c_float], None),
             "Vt13StatusReady": ([c.POINTER(Status), c.c_uint32], c.c_bool),
             "Vt13WrapAngle": ([c.c_float], c.c_float),
             "Vt13ChassisHeading": ([c.POINTER(Status)], c.c_float),
@@ -174,6 +174,48 @@ unsigned test_size(unsigned type) {
             self.assertFalse(value.fn_down or value.spin_down)
             self.assertFalse(value.keyboard_move or value.mouse_left or value.mouse_right)
             self.assertEqual((value.mouse_x, value.mouse_y), (0, 0))
+
+    def test_invalid_client_buttons_never_override_sticks_or_fire(self):
+        """映射层也拒绝可选段操控量，防止未经过解析器的替身/调用方误用保留值。"""
+        for mode in (0, 1, 2):
+            raw = Input(valid=True, mode_switch=mode, wheel=1024, function_left=True,
+                        keyboard=0xffff, mouse_left=3, mouse_right=1, mouse_middle=1,
+                        mouse_x=32767, mouse_y=-32768)
+            raw.normalized[:] = (0.2, 0.3, 0.4, 0.5)
+            value = Control()
+            self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+            self.assertTrue(value.valid)
+            self.assertFalse(value.keyboard_move or value.mouse_left or value.mouse_right or value.spin_down)
+            self.assertEqual((value.mouse_x, value.mouse_y), (0, 0))
+            if mode:
+                self.assertTrue(value.fn_down)
+                self.assertAlmostEqual(value.move_x, 0.5)
+                self.assertAlmostEqual(value.move_y, -0.4)
+                raw.trigger = True
+                self.lib.Vt13MapControl(c.byref(raw), c.byref(value))
+                self.assertTrue(value.spin_down)
+
+    def test_wire_optional_absence_keeps_n_s_initialization_enabled(self):
+        """实际CRC帧经解析和映射后，不可用键鼠不再使N/S初始化反复失能。"""
+        for mode in (1, 2):
+            self.lib.test_init()
+            state = Init()
+            for i in range(16):
+                now = 1000 + 14 * i
+                wire = frame(channels=(1024, 1024, 1684, 1024), mode=mode,
+                             buttons=(3, 3, 3), mouse=(32767, -32768, 0), keyboard=0xffff)
+                self.lib.test_feed(wire, len(wire), now)
+                value = Control()
+                self.lib.Vt13ReadControl(c.byref(value))
+                enabled = self.lib.Vt13ControlEnabled(c.byref(value))
+                self.assertTrue(enabled)
+                self.assertFalse(value.keyboard_move or value.mouse_left or value.mouse_right)
+                self.assertEqual((value.move_x, value.move_y, value.mouse_x, value.mouse_y), (0, -1, 0, 0))
+                self.lib.Vt13UpdateInit(c.byref(state), enabled, True, 0, 0, now, 3000)
+                self.assertEqual(state.state, 1 if i == 0 else 2)
+            self.lib.test_time(now + 100)
+            self.lib.Vt13ReadControl(c.byref(value))
+            self.assertFalse(self.lib.Vt13ControlEnabled(c.byref(value)))
 
     def test_spin_uses_trigger_not_right_function_key(self):
         """经过实际协议解码，确认右功能键和右上扳机不会混用。"""
@@ -478,40 +520,57 @@ unsigned test_size(unsigned type) {
         state.sequence, self.input.sequence = 0xffffffff, 0
         self.assertTrue(take())
 
-    def test_keyboard_acceleration_release_and_joystick_handover(self):
+    def test_keyboard_press_and_release_are_immediate(self):
         state = KeyboardMotion()
         self.input.keyboard_move, self.input.move_x = True, 1
         def update(now):
-            self.lib.Vt13UpdateKeyboardMotion(c.byref(state), c.byref(self.input), now, 4, 2, 4)
+            self.lib.Vt13UpdateKeyboardMotion(c.byref(state), c.byref(self.input), now, 4)
+        # 首次检测到按键即达到最高参考速度，同一毫秒反向也不等待加速。
+        update(100)
+        self.assertEqual(state.vx, 4)
+        self.input.move_x = -1
+        update(100)
+        self.assertEqual(state.vx, -4)
+        # 松键的同一拍撤销旧速度；摇杆居中为零，有输入则直接交回摇杆。
+        self.input.keyboard_move, self.input.move_x = False, 0
         update(100)
         self.assertEqual(state.vx, 0)
-        update(120)
-        self.assertAlmostEqual(state.vx, 0.04, places=6)
-        for now in range(140, 2240, 20):
-            update(now)
-        self.assertAlmostEqual(state.vx, 4, places=5)
-        self.input.keyboard_move, self.input.move_x = False, -1
-        update(2240)
-        self.assertAlmostEqual(state.vx, 3.92, places=4)
-        for now in range(2260, 7000, 20):
-            update(now)
         self.assertFalse(state.active)
-        self.assertAlmostEqual(state.vx, -4, places=5)
-        self.input.mode = 0
+        self.input.move_x = 0.5
+        update(100)
+        self.assertEqual(state.vx, 2)
+        # 斜向合速度保持上限，对向抵消立即为零，不残留上一方向速度。
+        self.input.keyboard_move = True
+        self.input.move_x = self.input.move_y = math.sqrt(0.5)
+        update(7000)
+        self.assertAlmostEqual(math.hypot(state.vx, state.vy), 4, places=5)
+        self.input.move_x = self.input.move_y = 0
         update(7000)
         self.assertEqual((state.vx, state.vy), (0, 0))
+        self.input.mode = 0
+        update(7000)
+        self.assertFalse(state.active)
+        self.assertEqual((state.vx, state.vy), (0, 0))
 
-    def test_keyboard_clock_wrap_and_long_period_are_bounded(self):
+    def test_keyboard_release_does_not_depend_on_elapsed_time(self):
         state = KeyboardMotion()
         self.input.keyboard_move, self.input.move_x = True, 1
         update = self.lib.Vt13UpdateKeyboardMotion
-        update(c.byref(state), c.byref(self.input), 0xfffffff0, 4, 2, 4)
-        update(c.byref(state), c.byref(self.input), 4, 4, 2, 4)
-        self.assertAlmostEqual(state.vx, 0.04, places=6)
-        update(c.byref(state), c.byref(self.input), 1004, 4, 2, 4)
-        self.assertAlmostEqual(state.vx, 0.08, places=6)
+        # 输入切换在毫秒回卷或长调度间隔下仍直接生效，不再等待减速积分。
+        update(c.byref(state), c.byref(self.input), 0xfffffff0, 4)
+        self.assertEqual(state.vx, 4)
+        self.input.keyboard_move, self.input.move_x = False, 0
+        update(c.byref(state), c.byref(self.input), 4, 4)
+        self.assertEqual(state.vx, 0)
+        self.assertFalse(state.active)
+        self.input.keyboard_move, self.input.move_x = True, -1
+        update(c.byref(state), c.byref(self.input), 1004, 4)
+        self.assertEqual(state.vx, -4)
+        self.input.keyboard_move, self.input.move_x = False, 0
+        update(c.byref(state), c.byref(self.input), 1004, 4)
+        self.assertEqual(state.vx, 0)
         self.input.mode = 2
-        update(c.byref(state), c.byref(self.input), 1005, 4, 2, 4)
+        update(c.byref(state), c.byref(self.input), 1005, 4)
         self.assertFalse(state.active)
         self.assertEqual((state.vx, state.vy), (0, 0))
 

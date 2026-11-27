@@ -81,8 +81,15 @@ static bool Vt13Decode(Vt13Parser *parser, uint32_t now_ms)
     next.mouse_right = (data[16] >> 2) & 3U;
     next.mouse_middle = (data[16] >> 4) & 3U;
     next.keyboard = (uint16_t)(data[17] | ((uint16_t)data[18] << 8));
-    if (next.mode_switch > 2U || next.wheel < VT13_CHANNEL_MIN || next.wheel > VT13_CHANNEL_MAX ||
-        next.mouse_left > 1U || next.mouse_right > 1U || next.mouse_middle > 1U) return false;
+    /* 基础遥控量仍必须合法；可选键鼠不可用不能替代基础通道、拨轮或档位校验。 */
+    if (next.mode_switch > 2U || next.wheel < VT13_CHANNEL_MIN || next.wheel > VT13_CHANNEL_MAX) return false;
+    /* 客户端相关可选段状态超出协议范围时，只停用本帧全部键鼠，不拒绝新鲜的合法摇杆帧。 */
+    if (next.mouse_left > 1U || next.mouse_right > 1U || next.mouse_middle > 1U) {
+        next.mouse_x = next.mouse_y = next.mouse_z = 0;
+        next.mouse_left = next.mouse_right = next.mouse_middle = 0U;
+        next.keyboard = 0U;
+        ++parser->stats.keymouse_invalid_frames;
+    }
     next.sequence = parser->input.sequence + 1U;
     next.update_time_ms = now_ms;
     next.valid = true;

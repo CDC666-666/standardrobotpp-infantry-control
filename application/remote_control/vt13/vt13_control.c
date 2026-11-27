@@ -18,6 +18,7 @@
  */
 void Vt13MapControl(const Vt13Input *raw, Vt13ControlInput *out)
 {
+    bool keymouse_valid;
     /* 调用方未提供输出空间时直接退出，避免解引用空指针。 */
     if (out == NULL) return;
     memset(out, 0, sizeof(*out));
@@ -40,10 +41,12 @@ void Vt13MapControl(const Vt13Input *raw, Vt13ControlInput *out)
     out->fn_down = raw->function_left;
     /* 小陀螺使用右上扳机；右上功能键不参与该映射。 */
     out->spin_down = raw->trigger;
-    out->mouse_left = raw->mouse_left != 0U;
-    out->mouse_right = raw->mouse_right != 0U;
+    /* 即使调用方绕过解析器，也不能把不可用的客户端段当作按键或鼠标命令。 */
+    keymouse_valid = raw->mouse_left <= 1U && raw->mouse_right <= 1U && raw->mouse_middle <= 1U;
+    out->mouse_left = keymouse_valid && raw->mouse_left == 1U;
+    out->mouse_right = keymouse_valid && raw->mouse_right == 1U;
     /* 只在 N 档接入键鼠移动与 Shift，S 档保持原摇杆和扳机操控。 */
-    if (out->mode == VT13_MODE_N) {
+    if (out->mode == VT13_MODE_N && keymouse_valid) {
         out->mouse_x = raw->mouse_x;
         out->mouse_y = raw->mouse_y;
         out->keyboard_move = (raw->keyboard & VT13_KEY_MOVE_MASK) != 0U;
@@ -278,57 +281,19 @@ bool Vt13TakeMouseDelta(Vt13MouseControl *state, const Vt13ControlInput *input, 
 }
 
 /**
- * @brief 按加减速限制把单轴速度推进到本拍目标。
- * @note 释放、减速或反向先采用减速限制，增加同向速度采用加速限制。
- */
-static float Vt13KeyboardAxisStep(float current, float target, float dt_s, float accel, float decel)
-{
-    float rate = current * target < 0.0f || fabsf(target) < fabsf(current) ? decel : accel;
-    float step = rate * dt_s;
-    /* 剩余差值在本拍变化范围内时直接到位，避免越过目标和浮点抖动。 */
-    if (fabsf(target - current) <= step) return target;
-    return current + (target > current ? step : -step);
-}
-
-/**
- * @brief 更新 WASD 优先控制及松键向摇杆平滑交接的平移参考。
- * @note 键盘未使用过时不影响原摇杆响应；失能或离开 N 档立即清除历史速度。
+ * @brief 按住 WASD 立即使用目标速度，松键立即撤销键盘速度并交回摇杆。
+ * @note 不缓存减速斜坡；失能或离开 N 档立即清除速度状态。
  */
 void Vt13UpdateKeyboardMotion(Vt13KeyboardMotion *state, const Vt13ControlInput *input,
-                              uint32_t now_ms, float max_speed, float accel, float decel)
+                              uint32_t now_ms, float max_speed)
 {
-    uint32_t elapsed;
-    float target_x, target_y, dt_s;
-    /* 仅处理有效 N 档；异常限速参数也必须撤销键盘速度历史。 */
-    if (!Vt13ControlEnabled(input) || input->mode != VT13_MODE_N ||
-        !isfinite(max_speed) || !isfinite(accel) || !isfinite(decel) ||
-        max_speed <= 0.0f || accel <= 0.0f || decel <= 0.0f) {
-        memset(state, 0, sizeof(*state));
-        state->update_time_ms = now_ms;
-        return;
-    }
-    /* 方向键首次按下时沿用上一拍平移参考，不把未使用期间的时间一次性补算进去。 */
-    if (input->keyboard_move && !state->active) {
-        state->active = true;
-        state->update_time_ms = now_ms;
-    }
-    /* 没有键盘速度历史时直接沿用摇杆，并跟踪上一拍参考供下次按键平滑交接。 */
-    if (!state->active) {
-        state->vx = input->move_x * max_speed;
-        state->vy = input->move_y * max_speed;
-        state->update_time_ms = now_ms;
-        return;
-    }
-    elapsed = now_ms - state->update_time_ms;
+    memset(state, 0, sizeof(*state));
     state->update_time_ms = now_ms;
-    /* 调度延迟时最多补算 20 ms，避免恢复后目标速度突增。 */
-    if (elapsed > 20U) elapsed = 20U;
-    dt_s = (float)elapsed * 0.001f;
-    target_x = input->move_x * max_speed;
-    target_y = input->move_y * max_speed;
-    state->vx = Vt13KeyboardAxisStep(state->vx, target_x, dt_s, accel, decel);
-    state->vy = Vt13KeyboardAxisStep(state->vy, target_y, dt_s, accel, decel);
-    /* 松开方向键后跟到当前摇杆目标，随后恢复不经过键盘平滑器的原摇杆路径。 */
-    if (!input->keyboard_move && state->vx == target_x && state->vy == target_y)
-        state->active = false;
+    /* 仅接受有效 N 档和正常最高速度，其他情况保持清零后的非键盘状态。 */
+    if (!Vt13ControlEnabled(input) || input->mode != VT13_MODE_N ||
+        !isfinite(max_speed) || max_speed <= 0.0f) return;
+    state->vx = input->move_x * max_speed;
+    state->vy = input->move_y * max_speed;
+    /* 松键同拍退出键盘路径，调用方直接使用当前带死区的摇杆参考。 */
+    state->active = input->keyboard_move;
 }

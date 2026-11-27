@@ -72,9 +72,9 @@ static void ChassisBuildTranslationReference(void)
 {
     float vx = fp32_deadline(chassis_input.move_x * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
     float vy = fp32_deadline(chassis_input.move_y * CHASSIS_RC_MAX_RANGE, -CHASSIS_RC_DEADLINE, CHASSIS_RC_DEADLINE) / CHASSIS_RC_MAX_RANGE * CHASSIS_RC_MAX_SPEED;
-    Vt13UpdateKeyboardMotion(&chassis_keyboard_motion, &chassis_input, HAL_GetTick(), CHASSIS_KEY_MAX_SPEED, CHASSIS_KEY_ACCEL, CHASSIS_KEY_DECEL);
-    /* 方向键及松键交接期间使用平滑速度；空闲后完全恢复原摇杆响应。 */
-    if (chassis_keyboard_motion.active || chassis_input.keyboard_move) {
+    Vt13UpdateKeyboardMotion(&chassis_keyboard_motion, &chassis_input, HAL_GetTick(), CHASSIS_RC_MAX_SPEED);
+    /* 方向键直接使用最高速度参考，松键同拍交回摇杆，不延续旧键盘速度。 */
+    if (chassis_keyboard_motion.active) {
         vx = chassis_keyboard_motion.vx;
         vy = chassis_keyboard_motion.vy;
     }

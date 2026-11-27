@@ -80,9 +80,9 @@ bool Vt13ControlEnabled(const Vt13ControlInput *input);
 bool Vt13AutoAimRequested(const Vt13ControlInput *input);
 /* 按新接收帧消费鼠标位移；首次进入 N 档或失能恢复不补算旧位移。 */
 bool Vt13TakeMouseDelta(Vt13MouseControl *state, const Vt13ControlInput *input, int16_t *dx, int16_t *dy);
-/* WASD 优先期间及松键交接阶段限制平移速度变化，S 档和失能会复位。 */
+/* WASD 按下立即采用目标速度，松键立即交回摇杆；S 档和失能会复位。 */
 void Vt13UpdateKeyboardMotion(Vt13KeyboardMotion *state, const Vt13ControlInput *input,
-                              uint32_t now_ms, float max_speed, float accel, float decel);
+                              uint32_t now_ms, float max_speed);
 bool Vt13StatusReady(const GimbalControlStatus *status, uint32_t now_ms);
 float Vt13WrapAngle(float angle);
 float Vt13ChassisHeading(const GimbalControlStatus *status);

@@ -126,10 +126,7 @@
 #define CHASSIS_RC_MAX_SPEED (6.0f)     //最大速度(m/s)
 #define CHASSIS_RC_MAX_VELOCITY (2.0f)  //最大角速度(rad/s) 仅用于无云台模式
 
-// WASD 沿用当前最高速度，加速和松键交接减速单位为 m/s^2。
-#define CHASSIS_KEY_MAX_SPEED CHASSIS_RC_MAX_SPEED
-#define CHASSIS_KEY_ACCEL (6.0f)
-#define CHASSIS_KEY_DECEL (6.0f)
+// WASD 按下直接使用 CHASSIS_RC_MAX_SPEED，松键立即交回摇杆，不设置加减速斜坡。
 
 /*-------------------- 云台 --------------------*/
 //云台电流发送参数
@@ -140,8 +137,10 @@
 #define GIMBAL_INIT_TIME (uint32_t)3000
 
 //鼠标灵敏度 ---------------------
-#define MOUSE_SENSITIVITY (40000.0f)
-// 每个新有效接收帧的鼠标位移除以 MOUSE_SENSITIVITY 得到本帧角度增量，单位 rad。
+#define MOUSE_SENSITIVITY (10000.0f)
+// pitch 鼠标位移除以 MOUSE_SENSITIVITY 得到每个新有效帧的角度增量，单位 rad。
+#define MOUSE_YAW_SENSITIVITY (2500.0f)
+// yaw 单独使用此分母：由原10000降为2500，相同位移对应原来4倍转角，pitch保持不变。
 //遥控器灵敏度 ---------------------
 #define REMOTE_CONTROLLER_SENSITIVITY (100000.0f)
 #define REMOTE_CONTROLLER_MAX_DEADLINE (20.0f)
@@ -172,12 +171,12 @@
 #define GIMBAL_DIRECT_PITCH_MODE (0)
 
 //物理参数 ---------------------
-#define GIMBAL_UPPER_LIMIT_PITCH (0.25f)
+#define GIMBAL_UPPER_LIMIT_PITCH (0.35f)
 #define GIMBAL_LOWER_LIMIT_PITCH (-0.3f)
 
 //电机角度中值设置
 #define GIMBAL_DIRECT_PITCH_MID (-2.99279666f)  //云台初始化正对齐的时候使用的俯仰轴正中心量
-#define GIMBAL_DIRECT_YAW_MID   (-0.540360451)      //云台初始化正对齐的时候使用的偏航轴正中心量
+#define GIMBAL_DIRECT_YAW_MID   (1.85149193)      //云台初始化正对齐的时候使用的偏航轴正中心量
 
 //PID参数 ---------------------
 //偏航角度

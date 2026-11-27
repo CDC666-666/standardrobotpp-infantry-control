@@ -30,7 +30,7 @@ class Input(ctypes.Structure):
 
 class Stats(ctypes.Structure):
     _fields_ = [(name, ctypes.c_uint32) for name in
-                ("bytes", "valid_frames", "crc_errors", "invalid_frames")]
+                ("bytes", "valid_frames", "crc_errors", "invalid_frames", "keymouse_invalid_frames")]
 
 
 def reference_crc(data):
@@ -193,7 +193,66 @@ unsigned test_size(void) { return sizeof(Vt13Input); }
                 buttons = [0, 0, 0]
                 buttons[button] = value
                 self.feed(frame(buttons=buttons))
-                self.assertEqual(self.read().valid, value < 2)
+                self.assertTrue(self.read().valid)
+                self.assertEqual(self.stats().keymouse_invalid_frames, int(value >= 2))
+
+    def test_optional_keymouse_neutralized_without_losing_remote(self):
+        """客户端可选段异常不能拒绝CRC正确、基础遥控合法的新帧。"""
+        for mode in (0, 1, 2):
+            for button in range(3):
+                for invalid in (2, 3):
+                    self.lib.test_init()
+                    buttons = [1, 1, 1]
+                    buttons[button] = invalid
+                    self.feed(frame(mode=mode, buttons=buttons, keyboard=0xffff,
+                                    mouse=(32767, -32768, 1234)), 1000)
+                    value = self.read(1001)
+                    self.assertTrue(value.valid)
+                    self.assertEqual(list(value.channel), [364, 1024, 1684, 1200])
+                    self.assertEqual((value.mode_switch, value.wheel, value.trigger), (mode, 1684, True))
+                    self.assertEqual((value.mouse_x, value.mouse_y, value.mouse_z, value.keyboard), (0, 0, 0, 0))
+                    self.assertEqual((value.mouse_left, value.mouse_right, value.mouse_middle), (0, 0, 0))
+                    self.assertEqual((value.sequence, value.update_time_ms), (1, 1000))
+                    self.assertEqual(self.stats().invalid_frames, 0)
+                    self.assertEqual(self.stats().keymouse_invalid_frames, 1)
+
+    def test_optional_gap_refreshes_base_and_recovers_new_client_data(self):
+        """可选段降级期间只发布新基础帧，恢复后使用新键鼠，不保留旧按键。"""
+        self.feed(frame(mouse=(400, -200, 0), keyboard=17), 1000)
+        for i in range(1, 16):
+            now = 1000 + 14 * i
+            self.feed(frame(mode=1, buttons=(3, 3, 3), keyboard=0xffff), now)
+            value = self.read(now)
+            self.assertTrue(value.valid)
+            self.assertEqual((value.mouse_x, value.keyboard, value.mouse_left, value.mouse_right), (0, 0, 0, 0))
+            self.assertEqual((value.sequence, value.update_time_ms), (i + 1, now))
+        self.feed(frame(mouse=(20, 30, 0), buttons=(0, 1, 0), keyboard=8), 1224)
+        value = self.read(1224)
+        self.assertEqual((value.mouse_x, value.mouse_y, value.keyboard, value.mouse_right), (20, 30, 8, 1))
+        self.assertEqual(self.stats().keymouse_invalid_frames, 15)
+
+    def test_optional_degradation_never_bypasses_crc_or_core_checks(self):
+        """基础通道、拨轮、档位与CRC仍为整帧保护，不能伪造在线。"""
+        cases = [frame(channels=(0, 1024, 1024, 1024), buttons=(3, 3, 3)),
+                 frame(wheel=0, buttons=(3, 3, 3)), frame(mode=3, buttons=(3, 3, 3))]
+        bad_crc = bytearray(frame(buttons=(3, 3, 3)))
+        bad_crc[-1] ^= 1
+        cases.append(bytes(bad_crc))
+        for wire in cases:
+            self.lib.test_init()
+            self.feed(frame(mode=1), 1000)
+            self.feed(wire, 1090)
+            value = self.read(1099)
+            self.assertEqual((value.sequence, value.update_time_ms), (1, 1000))
+            self.assertFalse(self.read(1100).valid)
+            self.assertEqual(self.stats().keymouse_invalid_frames, 0)
+
+    def test_missing_optional_still_requires_fresh_frames(self):
+        self.feed(frame(mode=1, buttons=(3, 3, 3), keyboard=0xffff), 1000)
+        self.assertTrue(self.read(1099).valid)
+        value = self.read(1100)
+        self.assertFalse(value.valid)
+        self.assertEqual((value.keyboard, value.mouse_left, value.trigger), (0, 0, False))
 
     def test_bad_frames_do_not_refresh_input(self):
         self.feed(frame())

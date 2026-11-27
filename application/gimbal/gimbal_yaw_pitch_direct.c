@@ -460,7 +460,7 @@ static void GimbalCaptureManualReference(void)
 
 /**
  * @brief 更新手动云台参考，N 档有鼠标移动时优先，否则沿用摇杆。
- * @note 鼠标位移每个有效帧只积分一次，单位沿用 MOUSE_SENSITIVITY；两种输入共用原俯仰限位。
+ * @note 鼠标位移每个有效帧只积分一次，yaw/pitch 使用各自的灵敏度分母；两种输入共用原俯仰限位。
  */
 static void GimbalManualReference(void)
 {
@@ -468,8 +468,10 @@ static void GimbalManualReference(void)
     if (gimbal_input.mode == VT13_MODE_N && (gimbal_input.mouse_x != 0 || gimbal_input.mouse_y != 0)) {
         /* 只有新帧有新位移，接收间隔内不能按 1 ms 控制频率反复消费。 */
         if (gimbal_mouse_fresh) {
-            gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch - (float)gimbal_mouse_dy / MOUSE_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
-            gimbal_direct.reference.yaw = Vt13WrapAngle(gimbal_direct.reference.yaw - (float)gimbal_mouse_dx / MOUSE_SENSITIVITY);
+            /* 反向只作用于鼠标增量，原有参考角及俯仰限位不整体取负。 */
+            gimbal_direct.reference.pitch = fp32_constrain(gimbal_direct.reference.pitch + (float)gimbal_mouse_dy / MOUSE_SENSITIVITY, GIMBAL_LOWER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu, GIMBAL_UPPER_LIMIT_PITCH + gimbal_direct.angle_zero_for_imu);
+            /* yaw 单独采用提高4倍后的鼠标灵敏度，方向及角度折返保持原逻辑。 */
+            gimbal_direct.reference.yaw = Vt13WrapAngle(gimbal_direct.reference.yaw - (float)gimbal_mouse_dx / MOUSE_YAW_SENSITIVITY);
         }
     } else {
         /* 鼠标空闲或处于 S 档时恢复原摇杆增量，保留已有死区、灵敏度和方向。 */
