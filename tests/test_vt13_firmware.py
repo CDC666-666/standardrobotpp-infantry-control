@@ -29,6 +29,9 @@ typedef unsigned char bool_t;
 #include "macro_typedef.h"
 #include "vt13_control.h"
 #include "supervisory_computer_cmd.h"
+#ifdef TEST_SHOOT
+#include "pid.h"
+#else
 #define PID_H
 enum { PID_POSITION, PID_DELTA };
 typedef struct { float Kp, out, Iout, max_out; } pid_type_def;
@@ -46,6 +49,7 @@ static float PID_calc(pid_type_def *p, float feedback, float reference) {
 }
 /* 清除替身输出与积分，用于核验失能复位路径。 */
 static void PID_clear(pid_type_def *p) { p->out=p->Iout=0; }
+#endif
 typedef struct { float pos,vel,tor,curr; int state,ecd; } TestMotorValue;
 typedef struct { TestMotorValue set,fdb; bool offline; int direction; } Motor_s;
 /* 初始化电机替身并保存方向，不访问实际 CAN 电机。 */
@@ -58,8 +62,22 @@ typedef struct { struct { int16_t ch[5]; uint8_t s[2]; } rc; } RC_ctrl_t;
 static RC_ctrl_t dummy_rc;
 static const RC_ctrl_t *get_remote_control_point(void) { return &dummy_rc; }
 typedef struct { float dummy; } Imu_t;
-typedef struct { float dummy; } SupCap_s;
-static struct { int robot_level; } robot_status;
+typedef struct { struct { float voltage_cap; } fdb; } SupCap_s;
+/* 超电只替换硬件反馈和发送，功率限制使用实际源码。 */
+static void SupCapInit(SupCap_s *cap, uint8_t can) { (void)can; memset(cap,0,sizeof(*cap)); }
+static void GetSupCapMeasure(SupCap_s *cap) { (void)cap; }
+typedef struct { int robot_level; uint16_t chassis_power_limit; } robot_status_t;
+static robot_status_t robot_status;
+/* 保持缓冲在目标值，单独检验四轮电流的限制与发送链路。 */
+static void get_chassis_power_and_buffer(float *power, float *buffer) { *power=0; *buffer=30; }
+static void CanCmdSupCap(uint8_t can, uint16_t buffer, uint16_t limit, uint8_t mode) {
+    (void)can; (void)buffer; (void)limit; (void)mode;
+}
+/* 既有独立诊断只检查各自控制链；功率接线回归显式启用真实模块。 */
+#ifndef TEST_REAL_POWER
+#define CHASSIS_POWER_CONTROL_H
+static void chassis_power_control_init(void *chassis) { (void)chassis; }
+#endif
 static uint32_t now_ms=100, irq_mask;
 typedef uint32_t TickType_t;
 #define configTICK_RATE_HZ 1000
@@ -70,11 +88,13 @@ static uint32_t __get_PRIMASK(void) { return irq_mask; }
 static void __disable_irq(void) { irq_mask=1; }
 /* 恢复替身屏蔽状态，不影响主机真实中断。 */
 static void __set_PRIMASK(uint32_t v) { irq_mask=v; }
-static bool sensor_error;
+static bool sensor_error, gyro_error, accel_error;
 #define DBUS_TOE 0
 #define BOARD_GYRO_TOE 1
 #define BOARD_ACCEL_TOE 2
-static bool toe_is_error(uint8_t toe) { (void)toe; return sensor_error; }
+static bool toe_is_error(uint8_t toe) {
+    return sensor_error || (toe==BOARD_GYRO_TOE&&gyro_error) || (toe==BOARD_ACCEL_TOE&&accel_error);
+}
 static float imu_angle[3], imu_velocity[3];
 static float GetImuAngle(uint8_t a) { return imu_angle[a]; }
 static float GetImuVelocity(uint8_t a) { return imu_velocity[a]; }
@@ -145,14 +165,23 @@ static void check_keyboard_mouse_gimbal(void) {
     imu_angle[AX_YAW]=imu_angle[AX_PITCH]=0;
     step();step();assert(gimbal_direct.mode==GIMBAL_IMU);
     raw.normalized[0]=raw.normalized[1]=1;
+    /* 从非零目标开始验证反向，避免整体取负在零点上偶然通过。 */
+    gimbal_direct.reference.pitch=gimbal_direct.angle_zero_for_imu+0.1f;
     raw.mouse_x=400;raw.mouse_y=-200;++raw.sequence;
     float yaw_before=gimbal_direct.reference.yaw,pitch_before=gimbal_direct.reference.pitch;
     step();
-    assert(fabsf(gimbal_direct.reference.yaw-(yaw_before-400.0f/MOUSE_SENSITIVITY))<0.00001f);
-    assert(fabsf(gimbal_direct.reference.pitch-(pitch_before+200.0f/MOUSE_SENSITIVITY))<0.00001f);
+    /* 保留当前灵敏度，只反转 pitch 鼠标增量，不能翻转原有参考角。 */
+    /* 当前原分母10000，yaw单独提高至4倍：400 counts对应0.16 rad，pitch原比例保持。 */
+    assert(fabsf(gimbal_direct.reference.yaw-(yaw_before-0.16f))<0.00001f);
+    assert(fabsf(gimbal_direct.reference.pitch-(pitch_before-200.0f/MOUSE_SENSITIVITY))<0.00001f);
     yaw_before=gimbal_direct.reference.yaw;pitch_before=gimbal_direct.reference.pitch;
     for(int i=0;i<20;++i)step();
     assert(gimbal_direct.reference.yaw==yaw_before&&gimbal_direct.reference.pitch==pitch_before);
+    /* 正反大位移必须在原来的不对称上下限内，限幅后的结果不能再整体取负。 */
+    raw.mouse_x=0;raw.mouse_y=32767;++raw.sequence;step();
+    assert(fabsf(gimbal_direct.reference.pitch-(GIMBAL_UPPER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu))<0.00001f);
+    raw.mouse_y=-32768;++raw.sequence;step();
+    assert(fabsf(gimbal_direct.reference.pitch-(GIMBAL_LOWER_LIMIT_PITCH+gimbal_direct.angle_zero_for_imu))<0.00001f);
     raw.mouse_x=raw.mouse_y=0;++raw.sequence;step();
     assert(fabsf(gimbal_direct.reference.yaw-(yaw_before-660.0f/REMOTE_CONTROLLER_SENSITIVITY))<0.00001f);
     raw.mouse_right=1;vision.valid=true;vision.fire=true;step();
@@ -161,6 +190,49 @@ static void check_keyboard_mouse_gimbal(void) {
     assert(gimbal_direct.reference.yaw==gimbal_direct.feedback_pos.yaw);
     raw.mouse_right=1;vision.valid=false;step();assert(gimbal_direct.mode==GIMBAL_IMU);
     raw.mode_switch=0;step();assert(last_torque==0&&sent[GIMBAL_CAN][1][2]==0);
+}
+/* 失联在两个撤销入口均立即停机，恢复有效N/S后沿原流程重新回中。 */
+static void check_input_loss_recovery(void) {
+    for(unsigned mode=1;mode<=2;++mode) {
+        for(unsigned ready=0;ready<=1;++ready) {
+            for(unsigned at_send=0;at_send<=1;++at_send) {
+                GimbalInit();enable_remote();raw.mode_switch=mode;vision.valid=false;
+                sensor_error=gyro_error=accel_error=false;
+                gimbal_direct.yaw.fdb.pos=GIMBAL_DIRECT_YAW_MID;
+                gimbal_direct.pitch.fdb.pos=GIMBAL_DIRECT_PITCH_MID;
+                for(int i=0;i<3;++i)imu_angle[i]=imu_velocity[i]=0;
+                step();if(ready)step();
+                assert(gimbal_init_control.state==(ready?VT13_INIT_READY:VT13_INIT_RUNNING));
+                raw.valid=false;unsigned before=enables;
+                if(at_send)GimbalSendCmd();else step();
+                assert(gimbal_init_control.state==VT13_INIT_DISABLED&&!gimbal_direct.init_continue);
+                assert(last_torque==0&&sent[GIMBAL_CAN][1][2]==0&&enables==before);
+                raw.valid=true;step();assert(gimbal_direct.mode==GIMBAL_INIT);
+                step();assert(gimbal_init_control.state==VT13_INIT_READY);
+            }
+        }
+    }
+}
+/* 实际云台不能因不可用键鼠段而失去基础初始化，也不能误消费默认键盘/鼠标量。 */
+static void check_optional_keymouse_remote_only(void) {
+    for(unsigned mode=1;mode<=2;++mode) {
+        GimbalInit();enable_remote();raw.mode_switch=mode;raw.update_time_ms=now_ms;
+        sensor_error=gyro_error=accel_error=false;vision.valid=false;
+        gimbal_direct.yaw.fdb.pos=GIMBAL_DIRECT_YAW_MID;
+        gimbal_direct.pitch.fdb.pos=GIMBAL_DIRECT_PITCH_MID;
+        for(int i=0;i<3;++i)imu_angle[i]=imu_velocity[i]=0;
+        raw.mouse_left=3;raw.mouse_right=raw.mouse_middle=1;
+        raw.mouse_x=32767;raw.mouse_y=-32768;raw.keyboard=0xffff;
+        step();assert(gimbal_direct.mode==GIMBAL_INIT);
+        step();assert(gimbal_direct.mode==GIMBAL_IMU&&gimbal_direct.init_continue);
+        for(unsigned i=0;i<200;++i){++raw.sequence;step();}
+        assert(gimbal_init_control.state==VT13_INIT_READY);
+        assert(!gimbal_input.keyboard_move&&!gimbal_input.spin_down);
+        assert(!gimbal_input.mouse_left&&!gimbal_input.mouse_right);
+        assert(gimbal_direct.reference.yaw==gimbal_direct.feedback_pos.yaw);
+        assert(gimbal_direct.reference.pitch==gimbal_direct.feedback_pos.pitch);
+        raw.mode_switch=0;step();assert(last_torque==0&&sent[GIMBAL_CAN][1][2]==0);
+    }
 }
 int main(void) {
     GimbalControlStatus status;
@@ -200,17 +272,47 @@ int main(void) {
     gimbal_direct.yaw.fdb.pos=GIMBAL_DIRECT_YAW_MID;imu_angle[AX_YAW]=0;
     step();assert(gimbal_init_control.state==VT13_INIT_READY);
     check_keyboard_mouse_gimbal();
+    check_input_loss_recovery();
+    check_optional_keymouse_remote_only();
     puts("actual gimbal state, mouse and send gates: passed");return 0;
 }
 '''
 
 CHASSIS = r'''
+/* 验证实际功率模块原地修改最终指令，发送使用同一份电流且失能仍清零。 */
+static void check_power_current_path(void) {
+    ChassisInit();ChassisForceDisable();enable_remote();ChassisSetMode();
+    robot_status.chassis_power_limit=40;
+    assert(g_chassis_power_control.super_cap==&chassis.super_cap);
+    for(int i=0;i<4;++i) {
+        assert(g_chassis_power_control.motor_chassis[i]==&chassis.wheel[i]);
+        assert(g_chassis_power_control.motor_current_cmd[i]==&chassis.wheel[i].set.curr);
+        chassis.wheel[i].fdb.vel=0;
+        chassis.wheel[i].set.curr=(i%2?-1:1)*1000;
+    }
+    chassis_power_control();
+    for(int i=0;i<4;++i) assert(chassis.wheel[i].set.curr==(i%2?-1:1)*1000);
+    for(int i=0;i<4;++i) chassis.wheel[i].set.curr=(i%2?-1:1)*12000;
+    chassis_power_control();ChassisSendCmd();
+    assert(g_initial_total_power_debug>40);
+    for(int i=0;i<4;++i) {
+        assert(fabsf(chassis.wheel[i].set.curr)<12000);
+        assert(chassis.wheel[i].set.curr*(i%2?-1:1)>0);
+        assert(sent[CHASSIS_CAN][0][i]==chassis.wheel[i].set.curr);
+    }
+    raw.valid=false;ChassisSendCmd();
+    for(int i=0;i<4;++i) assert(sent[CHASSIS_CAN][0][i]==0);
+    puts("actual power control: pointers, pass-through, limiting, send and disable passed");
+}
+
 
 /* 验证 WASD 覆盖摇杆、Shift 小陀螺及空闲交回摇杆的实际参考链路。 */
 static void check_keyboard_chassis(void) {
     ChassisInit();ChassisForceDisable();enable_remote();chassis.P_wz=0;
     raw.normalized[3]=-1;raw.keyboard=1;
     ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_FOLLOW);
+    /* 第一拍即按最高速度生成平移参考，不需要再等一个调度周期。 */
+    assert(chassis.reference.vx==CHASSIS_RC_MAX_SPEED&&chassis.reference.vy==0);
     now_ms+=20;fake_status.update_time_ms=now_ms;
     ChassisSetMode();ChassisReference();assert(chassis.reference.vx>0&&chassis.reference.vy==0);
     raw.keyboard=17;now_ms+=20;fake_status.update_time_ms=now_ms;
@@ -219,11 +321,16 @@ static void check_keyboard_chassis(void) {
     ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_SPIN_RETURN);
     now_ms+=100;fake_status.update_time_ms=now_ms;
     ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_FOLLOW);
-    raw.keyboard=0;
-    for(int i=0;i<500;++i) {
-        now_ms+=20;fake_status.update_time_ms=now_ms;
-        ChassisSetMode();ChassisReference();
-    }
+    /* 收到松键帧且摇杆居中后，本拍平移参考就为零，不保留一秒速度拖尾。 */
+    raw.keyboard=0;raw.normalized[3]=0;
+    ChassisSetMode();ChassisReference();
+    assert(chassis.reference.vx==0&&chassis.reference.vy==0);
+    /* 零目标不等于零电流：有前向反馈时保留反向制动力，而不是继续前向推力。 */
+    chassis.P_vx=1.0f;chassis.P_vy=0;ChassisConsole();
+    assert(chassis.force_x<0);
+    chassis.P_vx=0;
+    /* 摇杆本身有输入时，松键后立即按摇杆移动，不能误当成必须停车。 */
+    raw.normalized[3]=-1;ChassisSetMode();ChassisReference();
     assert(chassis.reference.vx==-CHASSIS_RC_MAX_SPEED);
     raw.mouse_right=1;fake_status.auto_active=true;
     ChassisSetMode();ChassisReference();assert(chassis.mode==CHASSIS_BODY&&chassis.reference.wz==0);
@@ -306,6 +413,7 @@ int main(void) {
     for(int i=0;i<4;++i)assert(sent[CHASSIS_CAN][0][i]==0);
     check_follow_return_wz_limit();
     check_keyboard_chassis();
+    check_power_current_path();
     puts("actual chassis keyboard, coordinates, wz limits and send gates: passed");return 0;
 }
 '''
@@ -313,6 +421,79 @@ int main(void) {
 SHOOT = r'''
 /* 按真实发射任务顺序执行一拍，检查模式到发送门控的完整路径。 */
 static void step(void) { ShootSetMode();ShootReference();ShootConsole();ShootSendCmd(); }
+
+/* 复核现场 N 档未按右键时，第二次 Fn 是否贯穿关轮、停拨弹及最终发送。 */
+static void check_n_fn_second_press_stops(void) {
+    for (int auto_active=0;auto_active<=1;++auto_active) {
+        for (int left=0;left<=1;++left) {
+            enable_remote();ShootInit();ShootForceDisable();
+            fake_status.auto_active=auto_active;
+            fake_status.vision_fire=true;vision.valid=vision.fire=true;
+            raw.mouse_left=left;raw.mouse_right=0;raw.wheel=364;
+            SHOOT.FDB.fric_speed_fdb_R=-600;SHOOT.FDB.fric_speed_fdb_L=600;
+            step();
+            raw.function_left=true;step();
+            assert(shoot_control.friction_on&&SHOOT.fric_flag);
+            assert(SHOOT.mode==LOAD_BURSTFIRE);
+            raw.function_left=false;step();
+            assert(shoot_control.friction_on&&SHOOT.fric_flag);
+            raw.function_left=true;
+            for (int repeat=0;repeat<10;++repeat) {
+                step();
+                assert(!shoot_control.friction_on&&!SHOOT.fric_flag);
+                assert(SHOOT.state==FRIC_NOT_READY&&SHOOT.mode==LOAD_STOP);
+                assert(SHOOT.REF.fric_speed_ref_R==0&&SHOOT.REF.fric_speed_ref_L==0);
+                assert(sent[FRIC_MOTOR_R_CAN][0][0]>0&&sent[FRIC_MOTOR_R_CAN][0][1]<0);
+                assert(sent[TRIGGER_MOTOR_CAN][1][1]==0);
+            }
+        }
+    }
+    puts("N Fn second press: zero speed targets, braking current retained and feeding stopped: passed");
+}
+
+/* 用真实PID验证N/S关轮、双向制动、稳定零速和失能仍为零电流。 */
+static void check_zero_speed_braking(void) {
+    for(int mode=1;mode<=2;++mode) {
+        for(int direction=-1;direction<=1;direction+=2) {
+            enable_remote();ShootInit();ShootForceDisable();raw.mode_switch=mode;
+            SHOOT.FDB.fric_speed_fdb_R=100*direction;
+            SHOOT.FDB.fric_speed_fdb_L=-100*direction;
+            ShootSetMode();ShootReference();ShootConsole();
+            float current_r=SHOOT.fric_motor[0].set.curr,current_l=SHOOT.fric_motor[1].set.curr;
+            ShootSendCmd();
+            assert(!SHOOT.fric_flag&&SHOOT.mode==LOAD_STOP);
+            assert(sent[FRIC_MOTOR_R_CAN][0][0]==current_r&&sent[FRIC_MOTOR_R_CAN][0][1]==current_l);
+            assert(sent[FRIC_MOTOR_R_CAN][0][0]*SHOOT.FDB.fric_speed_fdb_R<0);
+            assert(sent[FRIC_MOTOR_R_CAN][0][1]*SHOOT.FDB.fric_speed_fdb_L<0);
+            SHOOT.FDB.fric_speed_fdb_R=SHOOT.FDB.fric_speed_fdb_L=0;
+            step();step();
+            assert(sent[FRIC_MOTOR_R_CAN][0][0]==0&&sent[FRIC_MOTOR_R_CAN][0][1]==0);
+            SHOOT.FDB.fric_speed_fdb_R=100*direction;
+            SHOOT.FDB.fric_speed_fdb_L=-100*direction;
+            step();raw.mode_switch=0;ShootSendCmd();
+            assert(sent[FRIC_MOTOR_R_CAN][0][0]==0&&sent[FRIC_MOTOR_R_CAN][0][1]==0);
+            assert(SHOOT.fric_pid[0].out==0&&SHOOT.fric_pid[1].out==0);
+        }
+    }
+}
+
+/* 发送前右键释放或S档目标失效时，不沿用按开轮速度计算的旧驱动电流。 */
+static void check_auto_exit_before_send_brakes(void) {
+    for(int mode=1;mode<=2;++mode) {
+        enable_remote();ShootInit();ShootForceDisable();raw.mode_switch=mode;
+        raw.mouse_right=1;fake_status.auto_active=true;
+        SHOOT.FDB.fric_speed_fdb_R=-300;SHOOT.FDB.fric_speed_fdb_L=300;
+        ShootSetMode();ShootReference();ShootConsole();
+        assert(SHOOT.fric_motor[0].set.curr<0&&SHOOT.fric_motor[1].set.curr>0);
+        if(mode==1) raw.mouse_right=0;
+        else fake_status.auto_active=false;
+        ShootSendCmd();
+        assert(!SHOOT.fric_flag&&SHOOT.mode==LOAD_STOP);
+        assert(SHOOT.REF.fric_speed_ref_R==0&&SHOOT.REF.fric_speed_ref_L==0);
+        assert(sent[FRIC_MOTOR_R_CAN][0][0]>0&&sent[FRIC_MOTOR_R_CAN][0][1]<0);
+        assert(sent[TRIGGER_MOTOR_CAN][1][1]==0);
+    }
+}
 
 /* 验证 N 档左右键以及 S 档自瞄均不能绕过视觉或机构安全许可。 */
 static void check_mouse_shoot_gates(void) {
@@ -374,6 +555,9 @@ int main(void) {
     raw.function_left=false;step();raw.function_left=true;step();assert(SHOOT.fric_flag);
     fake_status.ready=false;ShootSendCmd();
     assert(sent[FRIC_MOTOR_R_CAN][0][0]==0&&sent[TRIGGER_MOTOR_CAN][1][1]==0);
+    check_n_fn_second_press_stops();
+    check_zero_speed_braking();
+    check_auto_exit_before_send_brakes();
     check_mouse_shoot_gates();
     puts("actual shooting mouse interlocks and send gates: passed");return 0;
 }
@@ -386,13 +570,15 @@ class FirmwareTest(unittest.TestCase):
         self.assertIsNotNone(compiler, "必须使用 GCC 执行实际控制文件")
         with tempfile.TemporaryDirectory(prefix="vt13-firmware-") as directory:
             work = Path(directory)
-            (work / "test_hw.h").write_text(HARDWARE, encoding="utf-8")
+            hardware = HARDWARE.replace('#include "pid.h"',
+                                        f'#include "{(ROOT / "components/controller/pid.h").as_posix()}"')
+            (work / "test_hw.h").write_text(hardware, encoding="utf-8")
             stubs = ("pid.h motor.h remote_control.h IMU.h detect_task.h user_lib.h CAN_cmd_dji.h "
                      "CAN_cmd_damiao.h cmsis_os.h CAN_receive.h usb_debug.h main.h SupCap.h "
-                     "IMU_task.h CAN_cmd_SupCap.h referee.h arm_math.h CAN_communication.h")
+                     "IMU_task.h CAN_cmd_SupCap.h referee.h arm_math.h CAN_communication.h voltage_task.h")
             for name in stubs.split():
                 (work / name).write_text('#include "test_hw.h"\n', encoding="utf-8")
-            includes = [work, ROOT / "application", ROOT / "application/typedef",
+            includes = [work, ROOT / "components/controller", ROOT / "application", ROOT / "application/typedef",
                         ROOT / "application/remote_control/vt13", ROOT / "application/gimbal",
                         ROOT / "application/chassis", ROOT / "application/shoot",
                         ROOT / "application/communication", ROOT / "application/communication/vofa/observation"]
@@ -402,8 +588,14 @@ class FirmwareTest(unittest.TestCase):
                                 "shoot": "shoot_fric_trigger.c"}[component]
                     source = ROOT / "application" / component / filename
                     bridge = work / f"{component}.c"
-                    bridge.write_text(f'#define TEST_{component.upper()}\n#include "test_hw.h"\n'
-                                      f'#include "{source.as_posix()}"\n' + suffix, encoding="utf-8")
+                    # 底盘直接执行真实功率模块，超电通信由硬件替身承接。
+                    power_source = (f'#include "{(ROOT / "application/chassis/chassis_power_control.c").as_posix()}"\n'
+                                    if component == "chassis" else "")
+                    power_define = '#define TEST_REAL_POWER\n' if component == "chassis" else ""
+                    pid_source = (f'#include "{(ROOT / "components/controller/pid.c").as_posix()}"\n'
+                                  if component == "shoot" else "")
+                    bridge.write_text(power_define + f'#define TEST_{component.upper()}\n#include "test_hw.h"\n'
+                                      f'#include "{source.as_posix()}"\n' + power_source + pid_source + suffix, encoding="utf-8")
                     # Windows 使用可执行文件后缀，其他主机保持无后缀。
                     executable = work / (component + (".exe" if os.name == "nt" else ""))
                     command = [compiler, "-std=c99", "-fgnu89-inline", "-Werror=implicit-function-declaration"]
