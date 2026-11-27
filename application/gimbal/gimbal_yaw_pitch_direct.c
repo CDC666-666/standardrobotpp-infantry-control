@@ -802,7 +802,7 @@ void GimbalConsole(void)
         //yaw自瞄相关，纯力矩控制
         if (gimbal_direct.last_mode != GIMBAL_AUTO_AIM) {
             GimbalAutoYawReset();
-        }
+        }  
         GimbalAutoYawConsole();
     } else {
         plan_pitch_acc_filtered = 0.0f;
