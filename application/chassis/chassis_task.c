@@ -73,8 +73,10 @@ void chassis_task(void const * pvParameters)
         ChassisReference();
         // 计算控制量
         ChassisConsole();
-        //功率控制
-        //chassis_power_control();
+        // 全向轮完成总电流计算后，原地限制待发送的四轮电流。
+#if (CHASSIS_TYPE == CHASSIS_OMNI_WHEEL)
+        chassis_power_control();
+#endif
         // 发送控制量
         ChassisSendCmd();
         // 系统延时

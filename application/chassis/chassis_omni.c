@@ -151,10 +151,10 @@ void ChassisInit(void)
     MotorInit(&chassis.wheel[3], WHEEL_4_ID, WHEEL_4_CAN, WHEEL_4_MOTOR_TYPE, WHEEL_4_DIRECTION, REDUCTION_RATIO, WHEEL_4_MODE);
 
     /*-------------------- 初始化超级电容 --------------------*/
-    //SupCapInit(&chassis.super_cap, 1);  // 初始化超级电容，使用CAN1
+    SupCapInit(&chassis.super_cap, 1);  // 初始化超级电容，使用CAN1
 
     /*-------------------- 初始化功率控制 --------------------*/
-    //chassis_power_control_init(&chassis);  // 初始化功率控制系统
+    chassis_power_control_init(&chassis);  // 关联四轮最终电流指令并初始化功率控制
 
     // 发送初始化超级电容控制命令
     // 初始化时从裁判系统获取缓冲能量数据
@@ -234,7 +234,7 @@ void ChassisObserver(void)
             (4.0f * WHEEL_CENTER_DISTANCE);
 
     // 更新超级电容反馈数据
-    //GetSupCapMeasure(&chassis.super_cap);
+    GetSupCapMeasure(&chassis.super_cap);
 
     // 使用云台相对底盘的偏航差，供跟随和小陀螺模式使用。
     chassis.yaw_delta = GetGimbalDeltaYawMid();
